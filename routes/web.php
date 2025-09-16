@@ -27,6 +27,8 @@ Route::post('/quiz', function (Request $request) {
 
 Route::get('/quiz/{uuid}', [PlayQuizController::class, 'show'])->name('quiz.play.show');
 Route::post('/quiz/{uuid}', [PlayQuizController::class, 'submit'])->name('quiz.play.submit');
+Route::post('/quiz/{uuid}/advance', [PlayQuizController::class, 'advance'])->name('quiz.play.advance');
+Route::post('/quiz/{uuid}/reset', [PlayQuizController::class, 'reset'])->name('quiz.play.reset');
 
 // Authenticated app routes
 Route::middleware(['auth', 'verified'])->group(function () {
@@ -130,12 +132,27 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
         $quizArray = $quiz->only(['id', 'uuid', 'title', 'description', 'published_at', 'created_at']);
         $quizArray['play_url'] = route('quiz.play.show', ['uuid' => $quiz->uuid]);
+        $quizArray['console_url'] = route('quizzes.console', ['quiz' => $quiz->id]);
 
         return Inertia::render('Quizzes/Edit', [
             'quiz' => $quizArray,
             'questions' => $questions,
         ]);
     })->name('quizzes.edit');
+
+    // Console to control a quiz (Next/Reset), authenticated only
+    Route::get('quizzes/{quiz}/console', function (Quiz $quiz) {
+        abort_if($quiz->user_id !== auth()->id(), 404);
+
+        $quizArray = $quiz->only(['id', 'uuid', 'title']);
+        $quizArray['play_url'] = route('quiz.play.show', ['uuid' => $quiz->uuid]);
+        $quizArray['advance_url'] = route('quiz.play.advance', ['uuid' => $quiz->uuid]);
+        $quizArray['reset_url'] = route('quiz.play.reset', ['uuid' => $quiz->uuid]);
+
+        return Inertia::render('Quizzes/Console', [
+            'quiz' => $quizArray,
+        ]);
+    })->name('quizzes.console');
 
     // Update existing quiz
     Route::put('quizzes/{quiz}', function (Request $request, Quiz $quiz) {

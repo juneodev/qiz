@@ -30,6 +30,7 @@ interface Quiz {
   published_at?: string | null
   created_at: string
   play_url: string
+  console_url?: string
 }
 
 const props = defineProps<{ quiz: Quiz, questions: QuestionItem[] }>()
@@ -131,8 +132,9 @@ watch(
         <input :value="props.quiz.play_url" readonly class="w-full rounded bg-white/10 px-3 py-2 text-sm text-white ring-1 ring-white/15" />
         <a :href="props.quiz.play_url" target="_blank" class="rounded bg-white/10 px-3 py-2 text-sm ring-1 ring-white/20 hover:bg-white/15">Ouvrir</a>
         <button type="button" class="rounded bg-white/10 px-3 py-2 text-sm ring-1 ring-white/20 hover:bg-white/15" @click="navigator.clipboard.writeText(props.quiz.play_url)">Copier</button>
+        <a v-if="props.quiz.console_url" :href="props.quiz.console_url" class="rounded bg-emerald-600/20 px-3 py-2 text-sm text-emerald-100 ring-1 ring-emerald-500/30 hover:bg-emerald-600/30">Ouvrir la console</a>
       </div>
-      <p class="mt-2 text-xs text-white/60">Envoyez ce lien aux joueurs pour qu'ils puissent accéder au quiz.</p>
+      <p class="mt-2 text-xs text-white/60">Envoyez ce lien aux joueurs pour qu'ils puissent accéder au quiz. Utilisez la console pour piloter l'affichage en direct.</p>
     </div>
 
     <!-- Meta form -->

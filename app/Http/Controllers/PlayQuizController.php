@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Events\QuizProgressUpdated;
 use App\Models\Answer;
 use App\Models\Question;
 use App\Models\Quiz;
@@ -42,45 +43,38 @@ class PlayQuizController extends Controller
     public function show(Request $request, string $uuid)
     {
         $quiz = Quiz::where('uuid', $uuid)->firstOrFail();
-        $state = $this->bootSessionFor($quiz);
-        $key = $this->getSessionKey($quiz);
 
-        $showUrl = route('quiz.play.show', ['uuid' => $quiz->uuid]);
-        $submitUrl = route('quiz.play.submit', ['uuid' => $quiz->uuid]);
+        // Load all questions with answers (ordered) once; client handles progression locally
+        $questions = Question::where('quiz_id', $quiz->id)
+            ->orderBy('order')
+            ->with(['answers' => function ($q) {
+                $q->orderBy('order');
+            }])
+            ->get(['id', 'text', 'order'])
+            ->map(function ($q) {
+                return [
+                    'id' => $q->id,
+                    'text' => $q->text,
+                    'order' => $q->order,
+                    'answers' => $q->answers->map(function ($a) {
+                        return [
+                            'id' => $a->id,
+                            'text' => $a->text,
+                            'order' => $a->order,
+                        ];
+                    })->values(),
+                ];
+            })
+            ->values();
 
-        if ($request->boolean('next') && !$state['finished']) {
-            $state['index']++;
-            if ($state['index'] >= count($state['question_ids'])) {
-                $state['finished'] = true;
-                $state['index'] = count($state['question_ids']) - 1;
-            }
-            session([$key => $state]);
-            return redirect()->to($showUrl);
+        if ($questions->isEmpty()) {
+            abort(404, 'Aucune question disponible pour ce quiz.');
         }
-
-        if ($state['finished']) {
-            return Inertia::render('Quiz/Play', [
-                'question' => Question::with('answers')->find($state['question_ids'][count($state['question_ids']) - 1]),
-                'finished' => true,
-                'score' => $state['score'],
-                'total' => count($state['question_ids']),
-                'currentIndex' => $state['index'],
-                'showUrl' => $showUrl,
-                'submitUrl' => $submitUrl,
-            ]);
-        }
-
-        $currentQuestionId = $state['question_ids'][$state['index']];
-        $question = Question::with(['answers' => function ($q) {
-            $q->orderBy('order');
-        }])->findOrFail($currentQuestionId);
 
         return Inertia::render('Quiz/Play', [
-            'question' => $question,
-            'currentIndex' => $state['index'],
-            'total' => count($state['question_ids']),
-            'showUrl' => $showUrl,
-            'submitUrl' => $submitUrl,
+            'questions' => $questions,
+            'total' => $questions->count(),
+            'uuid' => $quiz->uuid,
         ]);
     }
 
@@ -133,6 +127,28 @@ class PlayQuizController extends Controller
             'score' => $state['score'],
             'showUrl' => $showUrl,
             'submitUrl' => $submitUrl,
+            'advanceUrl' => route('quiz.play.advance', ['uuid' => $quiz->uuid]),
+            'resetUrl' => route('quiz.play.reset', ['uuid' => $quiz->uuid]),
+            'uuid' => $quiz->uuid,
         ]);
+    }
+    public function advance(Request $request, string $uuid)
+    {
+        $quiz = Quiz::where('uuid', $uuid)->firstOrFail();
+
+        // Only dispatch an event; do not mutate state or redirect
+        event(new QuizProgressUpdated($quiz->uuid, 0, false, 0, 'advance'));
+
+        return back();
+    }
+
+    public function reset(Request $request, string $uuid)
+    {
+        $quiz = Quiz::where('uuid', $uuid)->firstOrFail();
+
+        // Only dispatch an event; do not mutate state or redirect
+        event(new QuizProgressUpdated($quiz->uuid, 0, false, 0, 'reset'));
+
+        return back();
     }
 }
