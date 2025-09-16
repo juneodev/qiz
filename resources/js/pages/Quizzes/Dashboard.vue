@@ -8,10 +8,12 @@ defineOptions({ layout: Layout });
 
 interface Quiz {
   id: number;
+  uuid: string;
   title: string;
   description?: string | null;
   published_at?: string | null;
   created_at: string;
+  play_url: string;
 }
 
 const props = defineProps<{
@@ -66,9 +68,15 @@ const props = defineProps<{
           </span>
         </div>
         <p class="mt-2 line-clamp-3 text-sm text-white/80" v-if="quiz.description">{{ quiz.description }}</p>
-        <div class="mt-4 flex items-center justify-between text-xs text-white/60">
-          <span>Créé le {{ new Date(quiz.created_at).toLocaleDateString() }}</span>
-          <a :href="`/quizzes/${quiz.id}/edit`" class="underline decoration-white/30 underline-offset-4 hover:text-white">Modifier</a>
+        <div class="mt-4 space-y-3">
+          <div class="flex items-center gap-2">
+            <input :value="quiz.play_url" readonly class="w-full rounded bg-white/10 px-2 py-1 text-xs text-white ring-1 ring-white/15" />
+            <button type="button" class="rounded bg-white/10 px-2 py-1 text-xs ring-1 ring-white/20 hover:bg-white/15" @click="navigator.clipboard.writeText(quiz.play_url)">Copier</button>
+          </div>
+          <div class="flex items-center justify-between text-xs text-white/60">
+            <span>Créé le {{ new Date(quiz.created_at).toLocaleDateString() }}</span>
+            <a :href="`/quizzes/${quiz.id}/edit`" class="underline decoration-white/30 underline-offset-4 hover:text-white">Modifier</a>
+          </div>
         </div>
       </article>
     </div>

@@ -24,10 +24,12 @@ interface QuestionItem {
 
 interface Quiz {
   id: number
+  uuid: string
   title: string
   description?: string | null
   published_at?: string | null
   created_at: string
+  play_url: string
 }
 
 const props = defineProps<{ quiz: Quiz, questions: QuestionItem[] }>()
@@ -120,6 +122,17 @@ watch(
         href="/quizzes"
         class="inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm ring-1 ring-white/15 hover:bg-white/10"
       >Retour</a>
+    </div>
+
+    <!-- Share link -->
+    <div class="mb-6 rounded-xl border border-white/10 bg-white/5 p-4">
+      <div class="mb-2 text-sm text-white/80">Lien à partager</div>
+      <div class="flex items-center gap-2">
+        <input :value="props.quiz.play_url" readonly class="w-full rounded bg-white/10 px-3 py-2 text-sm text-white ring-1 ring-white/15" />
+        <a :href="props.quiz.play_url" target="_blank" class="rounded bg-white/10 px-3 py-2 text-sm ring-1 ring-white/20 hover:bg-white/15">Ouvrir</a>
+        <button type="button" class="rounded bg-white/10 px-3 py-2 text-sm ring-1 ring-white/20 hover:bg-white/15" @click="navigator.clipboard.writeText(props.quiz.play_url)">Copier</button>
+      </div>
+      <p class="mt-2 text-xs text-white/60">Envoyez ce lien aux joueurs pour qu'ils puissent accéder au quiz.</p>
     </div>
 
     <!-- Meta form -->

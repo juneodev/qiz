@@ -35,10 +35,14 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
         $quizzes = Quiz::query()
             ->where('user_id', $user->id)
-            ->select('id', 'title', 'description', 'published_at', 'created_at')
+            ->select('id', 'uuid', 'title', 'description', 'published_at', 'created_at')
             ->latest()
             ->limit(5)
-            ->get();
+            ->get()
+            ->map(function ($quiz) {
+                $quiz->play_url = route('quiz.play.show', ['uuid' => $quiz->uuid]);
+                return $quiz;
+            });
 
         $total = Quiz::where('user_id', $user->id)->count();
         $published = Quiz::where('user_id', $user->id)->whereNotNull('published_at')->count();
@@ -63,9 +67,13 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('quizzes', function () {
         $quizzes = Quiz::query()
             ->where('user_id', auth()->id())
-            ->select('id', 'title', 'description', 'published_at', 'created_at')
+            ->select('id', 'uuid', 'title', 'description', 'published_at', 'created_at')
             ->latest()
-            ->get();
+            ->get()
+            ->map(function ($quiz) {
+                $quiz->play_url = route('quiz.play.show', ['uuid' => $quiz->uuid]);
+                return $quiz;
+            });
 
         return Inertia::render('Quizzes/Index', [
             'quizzes' => $quizzes,
@@ -91,7 +99,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
             'published_at' => !empty($validated['publish']) ? now() : null,
         ]);
 
-        return redirect()->route('dashboard');
+        return redirect()->route('quizzes.edit', ['quiz' => $quiz->id]);
     })->name('quizzes.store');
 
     // Edit quiz page
@@ -120,8 +128,11 @@ Route::middleware(['auth', 'verified'])->group(function () {
             ];
         })->values();
 
+        $quizArray = $quiz->only(['id', 'uuid', 'title', 'description', 'published_at', 'created_at']);
+        $quizArray['play_url'] = route('quiz.play.show', ['uuid' => $quiz->uuid]);
+
         return Inertia::render('Quizzes/Edit', [
-            'quiz' => $quiz->only(['id', 'title', 'description', 'published_at', 'created_at']),
+            'quiz' => $quizArray,
             'questions' => $questions,
         ]);
     })->name('quizzes.edit');
