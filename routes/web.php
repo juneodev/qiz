@@ -3,6 +3,7 @@
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 use App\Http\Controllers\QuizController;
+use App\Http\Controllers\PlayQuizController;
 use App\Models\Quiz;
 use App\Models\Question;
 use App\Models\Answer;
@@ -12,9 +13,20 @@ Route::get('/', function () {
     return Inertia::render('Welcome');
 })->name('home');
 
-// Public quiz routes
-Route::get('/quiz', [QuizController::class, 'show'])->name('quiz.show');
-Route::post('/quiz', [QuizController::class, 'submit'])->name('quiz.submit');
+// Public play: enter UUID page and play by UUID
+Route::get('/quiz', function () {
+    return view('quiz.enter');
+})->name('quiz.enter');
+
+Route::post('/quiz', function (Request $request) {
+    $data = $request->validate([
+        'uuid' => ['required', 'uuid'],
+    ]);
+    return redirect()->route('quiz.play.show', ['uuid' => $data['uuid']]);
+})->name('quiz.enter.submit');
+
+Route::get('/quiz/{uuid}', [PlayQuizController::class, 'show'])->name('quiz.play.show');
+Route::post('/quiz/{uuid}', [PlayQuizController::class, 'submit'])->name('quiz.play.submit');
 
 // Authenticated app routes
 Route::middleware(['auth', 'verified'])->group(function () {

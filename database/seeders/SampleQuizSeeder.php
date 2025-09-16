@@ -22,39 +22,64 @@ class SampleQuizSeeder extends Seeder
             ]);
         }
 
-        // Create or update a simple quiz with one question and four answers, owned by the user
+        // Create or update a simple quiz owned by the user
         $quiz = $user->quizzes()->firstOrCreate([
             'title' => 'Culture Générale (Démo)'
         ], [
             'description' => 'Un mini quiz de démonstration pour la page publique.'
         ]);
 
-        // Ensure a single demo question exists
-        $question = Question::firstOrCreate([
-            'quiz_id' => $quiz->id,
-            'text' => 'Quelle est la capitale de la France ?'
-        ], [
-            'order' => 1,
-        ]);
-
-        // Clear previous answers for idempotency
-        Answer::where('question_id', $question->id)->delete();
-
-        // Create four answers, one correct
-        $answers = [
-            ['text' => 'Paris', 'is_correct' => true, 'order' => 1],
-            ['text' => 'Lyon', 'is_correct' => false, 'order' => 2],
-            ['text' => 'Marseille', 'is_correct' => false, 'order' => 3],
-            ['text' => 'Bordeaux', 'is_correct' => false, 'order' => 4],
+        // Define three simple questions with answers
+        $questions = [
+            [
+                'text' => 'Quelle est la capitale de la France ?',
+                'answers' => [
+                    ['text' => 'Paris', 'is_correct' => true],
+                    ['text' => 'Lyon', 'is_correct' => false],
+                    ['text' => 'Marseille', 'is_correct' => false],
+                    ['text' => 'Bordeaux', 'is_correct' => false],
+                ],
+            ],
+            [
+                'text' => 'Combien font 2 + 2 ?',
+                'answers' => [
+                    ['text' => '3', 'is_correct' => false],
+                    ['text' => '4', 'is_correct' => true],
+                    ['text' => '5', 'is_correct' => false],
+                    ['text' => '22', 'is_correct' => false],
+                ],
+            ],
+            [
+                'text' => 'De quelle couleur est le ciel par temps clair ?',
+                'answers' => [
+                    ['text' => 'Bleu', 'is_correct' => true],
+                    ['text' => 'Vert', 'is_correct' => false],
+                    ['text' => 'Rouge', 'is_correct' => false],
+                    ['text' => 'Jaune', 'is_correct' => false],
+                ],
+            ],
         ];
 
-        foreach ($answers as $a) {
-            Answer::create([
-                'question_id' => $question->id,
-                'text' => $a['text'],
-                'is_correct' => $a['is_correct'],
-                'order' => $a['order'],
+        // Create or update questions and answers idempotently
+        foreach ($questions as $idx => $qData) {
+            $question = Question::firstOrCreate([
+                'quiz_id' => $quiz->id,
+                'text' => $qData['text'],
+            ], [
+                'order' => $idx + 1,
             ]);
+
+            // Reset answers for idempotency
+            Answer::where('question_id', $question->id)->delete();
+
+            foreach ($qData['answers'] as $aIdx => $aData) {
+                Answer::create([
+                    'question_id' => $question->id,
+                    'text' => $aData['text'],
+                    'is_correct' => $aData['is_correct'],
+                    'order' => $aIdx + 1,
+                ]);
+            }
         }
     }
 }

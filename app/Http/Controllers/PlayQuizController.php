@@ -2,22 +2,27 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Question;
 use App\Models\Answer;
+use App\Models\Question;
+use App\Models\Quiz;
 use Illuminate\Http\Request;
 
-class QuizController extends Controller
+class PlayQuizController extends Controller
 {
-    protected function bootSessionQuiz(): array
+    protected function getSessionKey(Quiz $quiz): string
     {
-        $state = session('quiz', null);
+        return 'quiz_' . $quiz->uuid;
+    }
+
+    protected function bootSessionFor(Quiz $quiz): array
+    {
+        $key = $this->getSessionKey($quiz);
+        $state = session($key, null);
 
         if (!$state || request()->boolean('reset')) {
-            // Build ordered list of question IDs from all published quizzes (or any)
-            $questionIds = Question::orderBy('order')->pluck('id')->all();
-
+            $questionIds = $quiz->questions()->orderBy('order')->pluck('id')->all();
             if (empty($questionIds)) {
-                abort(404, 'Aucune question disponible.');
+                abort(404, 'Aucune question disponible pour ce quiz.');
             }
 
             $state = [
@@ -27,25 +32,29 @@ class QuizController extends Controller
                 'finished' => false,
             ];
 
-            session(['quiz' => $state]);
+            session([$key => $state]);
         }
 
         return $state;
     }
 
-    public function show()
+    public function show(Request $request, string $uuid)
     {
-        $state = $this->bootSessionQuiz();
+        $quiz = Quiz::where('uuid', $uuid)->firstOrFail();
+        $state = $this->bootSessionFor($quiz);
+        $key = $this->getSessionKey($quiz);
 
-        // Advance to next question if requested
-        if (request()->boolean('next') && !$state['finished']) {
+        $showUrl = route('quiz.play.show', ['uuid' => $quiz->uuid]);
+        $submitUrl = route('quiz.play.submit', ['uuid' => $quiz->uuid]);
+
+        if ($request->boolean('next') && !$state['finished']) {
             $state['index']++;
             if ($state['index'] >= count($state['question_ids'])) {
                 $state['finished'] = true;
-                $state['index'] = count($state['question_ids']) - 1; // clamp to last
+                $state['index'] = count($state['question_ids']) - 1;
             }
-            session(['quiz' => $state]);
-            return redirect()->route('quiz.show');
+            session([$key => $state]);
+            return redirect()->to($showUrl);
         }
 
         if ($state['finished']) {
@@ -55,6 +64,8 @@ class QuizController extends Controller
                 'score' => $state['score'],
                 'total' => count($state['question_ids']),
                 'currentIndex' => $state['index'],
+                'showUrl' => $showUrl,
+                'submitUrl' => $submitUrl,
             ]);
         }
 
@@ -67,12 +78,17 @@ class QuizController extends Controller
             'question' => $question,
             'currentIndex' => $state['index'],
             'total' => count($state['question_ids']),
+            'showUrl' => $showUrl,
+            'submitUrl' => $submitUrl,
         ]);
     }
 
-    public function submit(Request $request)
+    public function submit(Request $request, string $uuid)
     {
-        $state = $this->bootSessionQuiz();
+        $quiz = Quiz::where('uuid', $uuid)->firstOrFail();
+        $state = $this->bootSessionFor($quiz);
+        $key = $this->getSessionKey($quiz);
+
         abort_if($state['finished'], 400, 'Quiz terminé.');
 
         $data = $request->validate([
@@ -83,7 +99,7 @@ class QuizController extends Controller
 
         $answer = Answer::with('question')->findOrFail($data['answer_id']);
 
-        // Ensure the answer belongs to the current question
+        // Ensure the answer belongs to the current question of this quiz
         if ($answer->question_id !== $currentQuestionId) {
             return back()->withErrors(['answer_id' => 'Réponse invalide pour cette question.'])->withInput();
         }
@@ -97,12 +113,14 @@ class QuizController extends Controller
             $state['score']++;
         }
 
-        // If last question, mark finished; otherwise keep index for showing feedback and let GET ?next advance
         if ($state['index'] >= count($state['question_ids']) - 1) {
             $state['finished'] = true;
         }
 
-        session(['quiz' => $state]);
+        session([$key => $state]);
+
+        $showUrl = route('quiz.play.show', ['uuid' => $quiz->uuid]);
+        $submitUrl = route('quiz.play.submit', ['uuid' => $quiz->uuid]);
 
         return view('quiz.show', [
             'question' => $question,
@@ -112,6 +130,8 @@ class QuizController extends Controller
             'total' => count($state['question_ids']),
             'finished' => $state['finished'],
             'score' => $state['score'],
+            'showUrl' => $showUrl,
+            'submitUrl' => $submitUrl,
         ]);
     }
 }
