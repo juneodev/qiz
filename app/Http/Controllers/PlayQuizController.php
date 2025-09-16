@@ -6,6 +6,7 @@ use App\Models\Answer;
 use App\Models\Question;
 use App\Models\Quiz;
 use Illuminate\Http\Request;
+use Inertia\Inertia;
 
 class PlayQuizController extends Controller
 {
@@ -58,7 +59,7 @@ class PlayQuizController extends Controller
         }
 
         if ($state['finished']) {
-            return view('quiz.show', [
+            return Inertia::render('Quiz/Play', [
                 'question' => Question::with('answers')->find($state['question_ids'][count($state['question_ids']) - 1]),
                 'finished' => true,
                 'score' => $state['score'],
@@ -74,7 +75,7 @@ class PlayQuizController extends Controller
             $q->orderBy('order');
         }])->findOrFail($currentQuestionId);
 
-        return view('quiz.show', [
+        return Inertia::render('Quiz/Play', [
             'question' => $question,
             'currentIndex' => $state['index'],
             'total' => count($state['question_ids']),
@@ -122,7 +123,7 @@ class PlayQuizController extends Controller
         $showUrl = route('quiz.play.show', ['uuid' => $quiz->uuid]);
         $submitUrl = route('quiz.play.submit', ['uuid' => $quiz->uuid]);
 
-        return view('quiz.show', [
+        return Inertia::render('Quiz/Play', [
             'question' => $question,
             'selectedAnswerId' => $answer->id,
             'isCorrect' => $isCorrect,

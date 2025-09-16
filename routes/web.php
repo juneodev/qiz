@@ -15,7 +15,7 @@ Route::get('/', function () {
 
 // Public play: enter UUID page and play by UUID
 Route::get('/quiz', function () {
-    return view('quiz.enter');
+    return Inertia::render('Quiz/Enter');
 })->name('quiz.enter');
 
 Route::post('/quiz', function (Request $request) {
