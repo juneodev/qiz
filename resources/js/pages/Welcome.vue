@@ -13,7 +13,7 @@
             <nav class="flex items-center gap-3 text-sm text-white/80">
                 <a href="/quiz" class="rounded-full px-4 py-2 ring-1 ring-white/15 transition hover:bg-white/10">Jouer un quiz</a>
                 <a href="/login" class="rounded-full bg-[#2b7cff] px-4 py-2 font-medium ring-1 ring-white/20 transition hover:brightness-110"
-                    >Admin</a
+                    >Se connecter</a
                 >
             </nav>
         </header>
@@ -38,7 +38,7 @@
                             href="/login"
                             class="inline-flex items-center justify-center rounded-xl px-5 py-3 font-semibold ring-1 ring-white/15 transition hover:bg-white/10"
                         >
-                            Créer / gérer (Admin)
+                            Créer / gérer
                         </a>
                     </div>
                     <p class="mt-3 text-xs text-white/60">Astuce: utilisez l'espace Admin pour ajouter vos questions et réponses.</p>
@@ -77,15 +77,15 @@
                     <p class="mt-2 text-sm text-white/80">Une page claire pour répondre et valider.</p>
                 </div>
                 <div class="rounded-xl bg-white/5 p-5 ring-1 ring-white/10">
-                    <div class="text-base font-semibold">Admin Filament</div>
-                    <p class="mt-2 text-sm text-white/80">Gérez vos questions et réponses depuis /admin.</p>
+                    <div class="text-base font-semibold">Administration</div>
+                    <p class="mt-2 text-sm text-white/80">Gérez les questions et réponses depuis votre espace dédié.</p>
                 </div>
             </section>
         </main>
 
         <!-- Footer -->
         <footer class="mx-auto max-w-7xl px-6 py-8 text-center text-xs text-white/60">
-            © {{ new Date().getFullYear() }} Quizz Maker — Fait avec Laravel, Inertia, Vue & Tailwind.
+            © {{ new Date().getFullYear() }} Quizz Maker — En cours de développement.
         </footer>
     </div>
 </template>

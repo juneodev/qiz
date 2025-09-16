@@ -19,11 +19,38 @@ Route::post('/quiz', [QuizController::class, 'submit'])->name('quiz.submit');
 // Authenticated app routes
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('dashboard', function () {
-        return Inertia::render('Dashboard');
+        $user = auth()->user();
+
+        $quizzes = Quiz::query()
+            ->where('user_id', $user->id)
+            ->select('id', 'title', 'description', 'published_at', 'created_at')
+            ->latest()
+            ->limit(5)
+            ->get();
+
+        $total = Quiz::where('user_id', $user->id)->count();
+        $published = Quiz::where('user_id', $user->id)->whereNotNull('published_at')->count();
+        $drafts = $total - $published;
+
+        return Inertia::render('Quizzes/Dashboard', [
+            'user' => [
+                'id' => $user->id,
+                'name' => $user->name,
+                'email' => $user->email,
+                'created_at' => $user->created_at,
+            ],
+            'stats' => [
+                'total' => $total,
+                'published' => $published,
+                'drafts' => $drafts,
+            ],
+            'recentQuizzes' => $quizzes,
+        ]);
     })->name('dashboard');
 
     Route::get('quizzes', function () {
         $quizzes = Quiz::query()
+            ->where('user_id', auth()->id())
             ->select('id', 'title', 'description', 'published_at', 'created_at')
             ->latest()
             ->get();
@@ -46,17 +73,19 @@ Route::middleware(['auth', 'verified'])->group(function () {
             'publish' => ['nullable', 'boolean'],
         ]);
 
-        $quiz = Quiz::create([
+        $quiz = $request->user()->quizzes()->create([
             'title' => $validated['title'],
             'description' => $validated['description'] ?? null,
             'published_at' => !empty($validated['publish']) ? now() : null,
         ]);
 
-        return redirect()->route('quizzes.index');
+        return redirect()->route('dashboard');
     })->name('quizzes.store');
 
     // Edit quiz page
     Route::get('quizzes/{quiz}/edit', function (Quiz $quiz) {
+        abort_if($quiz->user_id !== auth()->id(), 404);
+
         $quiz->load(['questions' => function ($q) {
             $q->orderBy('order');
         }, 'questions.answers' => function ($q) {
@@ -72,7 +101,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
                     return [
                         'id' => $answer->id,
                         'text' => $answer->text,
-                        'is_correct' => (bool) $answer->is_correct,
+                        'is_correct' => (bool)$answer->is_correct,
                         'order' => $answer->order,
                     ];
                 })->values(),
@@ -87,6 +116,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
     // Update existing quiz
     Route::put('quizzes/{quiz}', function (Request $request, Quiz $quiz) {
+        abort_if($quiz->user_id !== auth()->id(), 404);
+
         $validated = $request->validate([
             'title' => ['required', 'string', 'max:255'],
             'description' => ['nullable', 'string'],
@@ -99,11 +130,13 @@ Route::middleware(['auth', 'verified'])->group(function () {
             'published_at' => !empty($validated['publish']) ? now() : null,
         ]);
 
-        return redirect()->route('quizzes.index');
+        return redirect()->route('dashboard');
     })->name('quizzes.update');
 
     // Update quiz structure: questions and answers
     Route::put('quizzes/{quiz}/structure', function (Request $request, Quiz $quiz) {
+        abort_if($quiz->user_id !== auth()->id(), 404);
+
         $validated = $request->validate([
             'questions' => ['array'],
             'questions.*.id' => ['nullable', 'integer', 'exists:questions,id'],
@@ -128,11 +161,11 @@ Route::middleware(['auth', 'verified'])->group(function () {
         foreach ($questionsData as $qIndex => $qData) {
             $question = null;
 
-            if (! empty($qData['id'])) {
+            if (!empty($qData['id'])) {
                 $question = Question::where('quiz_id', $quiz->id)->where('id', $qData['id'])->first();
             }
 
-            if (! $question) {
+            if (!$question) {
                 $question = new Question();
                 $question->quiz_id = $quiz->id;
             }
@@ -147,7 +180,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
             $answersData = collect($qData['answers'] ?? [])
                 ->map(function ($a, $aIdx) {
                     $a['order'] = $a['order'] ?? $aIdx + 1;
-                    $a['is_correct'] = ! empty($a['is_correct']);
+                    $a['is_correct'] = !empty($a['is_correct']);
                     return $a;
                 })->values();
 
@@ -155,17 +188,17 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
             foreach ($answersData as $aIndex => $aData) {
                 $answer = null;
-                if (! empty($aData['id'])) {
+                if (!empty($aData['id'])) {
                     $answer = Answer::where('question_id', $question->id)->where('id', $aData['id'])->first();
                 }
 
-                if (! $answer) {
+                if (!$answer) {
                     $answer = new Answer();
                     $answer->question_id = $question->id;
                 }
 
                 $answer->text = $aData['text'];
-                $answer->is_correct = (bool) ($aData['is_correct'] ?? false);
+                $answer->is_correct = (bool)($aData['is_correct'] ?? false);
                 $answer->order = $aData['order'] ?? ($aIndex + 1);
                 $answer->save();
 
@@ -174,20 +207,20 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
             // Delete removed answers
             Answer::where('question_id', $question->id)
-                ->when(! empty($keptAnswerIds), fn ($q) => $q->whereNotIn('id', $keptAnswerIds))
-                ->when(empty($keptAnswerIds), fn ($q) => $q)
+                ->when(!empty($keptAnswerIds), fn($q) => $q->whereNotIn('id', $keptAnswerIds))
+                ->when(empty($keptAnswerIds), fn($q) => $q)
                 ->delete();
         }
 
         // Delete removed questions (cascade will delete answers)
         Question::where('quiz_id', $quiz->id)
-            ->when(! empty($keptQuestionIds), fn ($q) => $q->whereNotIn('id', $keptQuestionIds))
-            ->when(empty($keptQuestionIds), fn ($q) => $q)
+            ->when(!empty($keptQuestionIds), fn($q) => $q->whereNotIn('id', $keptQuestionIds))
+            ->when(empty($keptQuestionIds), fn($q) => $q)
             ->delete();
 
         return redirect()->route('quizzes.edit', ['quiz' => $quiz->id]);
     })->name('quizzes.structure');
 });
 
-require __DIR__.'/settings.php';
-require __DIR__.'/auth.php';
+require __DIR__ . '/settings.php';
+require __DIR__ . '/auth.php';

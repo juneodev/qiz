@@ -5,15 +5,25 @@ namespace Database\Seeders;
 use App\Models\Answer;
 use App\Models\Question;
 use App\Models\Quiz;
+use App\Models\User;
 use Illuminate\Database\Seeder;
-use Illuminate\Support\Str;
 
 class SampleQuizSeeder extends Seeder
 {
     public function run(): void
     {
-        // Create or update a simple quiz with one question and four answers
-        $quiz = Quiz::firstOrCreate([
+        // Ensure there is at least one user to own the demo quiz
+        $user = User::first();
+        if (!$user) {
+            $user = User::create([
+                'name' => 'Demo User',
+                'email' => 'demo@example.com',
+                'password' => 'password', // Will be hashed by User casts
+            ]);
+        }
+
+        // Create or update a simple quiz with one question and four answers, owned by the user
+        $quiz = $user->quizzes()->firstOrCreate([
             'title' => 'Culture Générale (Démo)'
         ], [
             'description' => 'Un mini quiz de démonstration pour la page publique.'
