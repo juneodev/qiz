@@ -6,53 +6,81 @@
     <title>Quiz - Question</title>
     @vite('resources/js/app.ts')
 </head>
-<body class="min-h-screen bg-gray-50 text-gray-900">
-    <div class="max-w-2xl mx-auto p-6">
-        <div class="text-center mb-8">
-            <h1 class="text-3xl font-bold">Quiz de démo</h1>
-            <p class="text-gray-600">Répondez à la question ci-dessous.</p>
+<body class="min-h-screen bg-[#102846] text-white">
+    <div class="mx-auto max-w-6xl px-6 py-10">
+        <!-- Question card -->
+        <div class="relative rounded-2xl bg-[#1f57c7]/95 shadow-2xl ring-1 ring-white/10">
+            <div class="absolute left-6 top-1/2 -translate-y-1/2 hidden sm:flex h-14 w-14 items-center justify-center rounded-full bg-white/10 ring-2 ring-white/30">
+                <!-- left icon -->
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" class="h-7 w-7 text-white/90"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7" d="M7 7h10v10H7z"/></svg>
+            </div>
+            <div class="absolute right-6 top-1/2 -translate-y-1/2 hidden sm:flex h-14 w-14 items-center justify-center rounded-full bg-white/10 ring-2 ring-white/30">
+                <!-- right icon -->
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" class="h-7 w-7 text-white/90"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7" d="M7 7h10v10H7z"/></svg>
+            </div>
+            <div class="px-8 py-8 sm:py-10">
+                <h2 class="text-center text-3xl sm:text-4xl font-semibold tracking-wide">{{ $question->text }}</h2>
+            </div>
         </div>
 
-        <div class="bg-white shadow rounded-lg p-6">
-            <h2 class="text-xl font-semibold mb-4">{{ $question->text }}</h2>
+        <!-- Answers -->
+        <form action="{{ route('quiz.submit') }}" method="POST" class="mt-8">
+            @csrf
+            <fieldset class="grid gap-5 md:grid-cols-2">
+                @php $letters = ['A','B','C','D','E','F']; @endphp
+                @foreach ($question->answers as $answer)
+                    @php
+                        $isSelected = isset($selectedAnswerId) && $selectedAnswerId == $answer->id;
+                        $stateColor = $isSelected ? ($isCorrect ? 'ring-emerald-400 bg-emerald-500' : 'ring-rose-400 bg-rose-500') : 'ring-white/15 bg-[#2b7cff]';
+                    @endphp
+                    <label class="group relative cursor-pointer rounded-2xl px-6 py-5 text-white shadow-xl ring-1 transition-all hover:-translate-y-0.5 hover:shadow-2xl {{ $stateColor }}">
+                        <input type="radio" name="answer_id" value="{{ $answer->id }}" class="peer absolute inset-0 h-full w-full cursor-pointer opacity-0" {{ $isSelected ? 'checked' : '' }} />
+                        <div class="flex items-center gap-4">
+                            <div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-white/15 ring-2 ring-white/40">
+                                <span class="text-xl font-bold">{{ $letters[$loop->index] ?? chr(65+$loop->index) }}</span>
+                            </div>
+                            <div class="text-lg sm:text-xl font-medium tracking-wide leading-snug">
+                                {{ $answer->text }}
+                            </div>
+                        </div>
+                    </label>
+                @endforeach
+            </fieldset>
 
+            @error('answer_id')
+                <p class="mt-3 text-sm text-rose-300">{{ $message }}</p>
+            @enderror
+
+            <div class="mt-6 flex items-center gap-4">
+                <button type="submit" class="inline-flex items-center rounded-full bg-white/10 px-6 py-3 text-base font-semibold text-white ring-1 ring-white/20 backdrop-blur transition hover:bg-white/15">Valider ma réponse</button>
+                <a href="{{ route('quiz.show') }}" class="text-sm text-white/70 hover:text-white">Réinitialiser</a>
+            </div>
+        </form>
+
+        <!-- Explanation & progress -->
+        <div class="mt-8">
             @if (isset($isCorrect))
-                <div class="mb-4">
+                <p class="text-center text-lg italic text-white/90">
                     @if ($isCorrect)
-                        <div class="rounded-md bg-green-50 text-green-800 px-4 py-3 border border-green-200">Bravo ! C'est la bonne réponse 🎉</div>
+                        Bravo ! C'est la bonne réponse 🎉
                     @else
-                        <div class="rounded-md bg-red-50 text-red-700 px-4 py-3 border border-red-200">Dommage, ce n'est pas la bonne réponse.</div>
+                        Dommage, ce n'est pas la bonne réponse. La bonne réponse est « {{ optional($question->answers->firstWhere('is_correct', true))->text }} ».
                     @endif
-                </div>
+                </p>
+            @else
+                <p class="text-center text-lg italic text-white/80">Explication Explication Explication Explication Explication Explication Explication</p>
             @endif
 
-            <form action="{{ route('quiz.submit') }}" method="POST" class="space-y-4">
-                @csrf
-                <fieldset class="space-y-3">
-                    @foreach ($question->answers as $answer)
-                        <label class="flex items-center gap-3 p-3 border rounded-md hover:bg-gray-50 cursor-pointer">
-                            <input type="radio" name="answer_id" value="{{ $answer->id }}" class="h-4 w-4 text-indigo-600 focus:ring-indigo-500"
-                                {{ (isset($selectedAnswerId) && $selectedAnswerId == $answer->id) ? 'checked' : '' }}>
-                            <span class="text-gray-800">{{ $answer->text }}</span>
-                        </label>
-                    @endforeach
-                </fieldset>
-
-                @error('answer_id')
-                    <p class="text-sm text-red-600">{{ $message }}</p>
-                @enderror
-
-                <div class="pt-2">
-                    <button type="submit" class="inline-flex items-center px-4 py-2 bg-indigo-600 text-white font-medium rounded-md shadow hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
-                        Valider ma réponse
-                    </button>
-                    <a href="{{ route('quiz.show') }}" class="ml-3 text-sm text-gray-600 hover:text-gray-900">Réinitialiser</a>
+            <div class="mt-6 flex items-center">
+                <div class="h-5 w-5 rounded-full bg-[#ff4b3e]"></div>
+                <div class="ml-4 h-5 flex-1 rounded-full bg-white/30">
+                    <div class="h-5 w-1/5 rounded-full bg-transparent"></div>
                 </div>
-            </form>
+            </div>
         </div>
 
-        <div class="mt-8 text-center text-sm text-gray-500">
-            <a class="underline hover:text-gray-700" href="/">Retour à l'accueil</a>
+        <div class="mt-10 text-center text-sm text-white/70">
+            <a class="underline decoration-white/30 underline-offset-4 hover:text-white" href="/">Retour à l'accueil</a>
         </div>
     </div>
 </body>
