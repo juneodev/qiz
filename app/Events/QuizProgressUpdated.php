@@ -13,22 +13,36 @@ class QuizProgressUpdated implements ShouldBroadcastNow
     use Dispatchable, InteractsWithSockets, SerializesModels;
 
     public string $uuid;
+
     public int $currentIndex;
+
     public bool $finished;
+
     public int $total;
+
+    public string $status;
+
     public string $type = 'QuizProgressUpdated';
+
     public string $action;
 
     /**
      * Create a new event instance.
      */
-    public function __construct(string $uuid, int $currentIndex, bool $finished, int $total, string $action = 'progress')
-    {
+    public function __construct(
+        string $uuid,
+        int $currentIndex,
+        bool $finished,
+        int $total,
+        string $action = 'progress',
+        string $status = 'waiting',
+    ) {
         $this->uuid = $uuid;
         $this->currentIndex = $currentIndex;
         $this->finished = $finished;
         $this->total = $total;
         $this->action = $action;
+        $this->status = $status;
     }
 
     /**
@@ -37,7 +51,7 @@ class QuizProgressUpdated implements ShouldBroadcastNow
      */
     public function broadcastOn(): Channel
     {
-        return new Channel('quiz.' . $this->uuid);
+        return new Channel('quiz.'.$this->uuid);
     }
 
     public function broadcastAs(): string

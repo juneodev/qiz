@@ -14,7 +14,7 @@ const submit = () => {
   <div class="min-h-dvh bg-[#102846] text-white">
     <div class="mx-auto max-w-xl px-6 py-16">
       <h1 class="text-center text-3xl sm:text-4xl font-semibold tracking-wide">Jouer à un quiz</h1>
-      <p class="mt-3 text-center text-white/80">Entrez l'identifiant (UUID) du quiz pour commencer.</p>
+      <p class="mt-3 text-center text-white/80">Entrez l'identifiant (UUID) du quiz pour vous inscrire.</p>
 
       <form @submit.prevent="submit" class="mt-8 space-y-4">
         <div>

@@ -2,6 +2,7 @@
 import { useForm } from '@inertiajs/vue3'
 import { computed, ref, watch } from 'vue'
 import Layout from './Layout.vue'
+import QrCodeSvg from '@/components/QrCodeSvg.vue'
 
 // Apply shared layout for the Quizzes section
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
@@ -30,7 +31,10 @@ interface Quiz {
   published_at?: string | null
   created_at: string
   play_url: string
+  join_url: string
+  qr_svg: string
   console_url?: string
+  participants_url?: string
 }
 
 const props = defineProps<{ quiz: Quiz, questions: QuestionItem[] }>()
@@ -125,16 +129,35 @@ watch(
       >Retour</a>
     </div>
 
-    <!-- Share link -->
+    <!-- Share -->
     <div class="mb-6 rounded-xl border border-white/10 bg-white/5 p-4">
-      <div class="mb-2 text-sm text-white/80">Lien à partager</div>
-      <div class="flex items-center gap-2">
-        <input :value="props.quiz.play_url" readonly class="w-full rounded bg-white/10 px-3 py-2 text-sm text-white ring-1 ring-white/15" />
-        <a :href="props.quiz.play_url" target="_blank" class="rounded bg-white/10 px-3 py-2 text-sm ring-1 ring-white/20 hover:bg-white/15">Ouvrir</a>
-        <button type="button" class="rounded bg-white/10 px-3 py-2 text-sm ring-1 ring-white/20 hover:bg-white/15" @click="navigator.clipboard.writeText(props.quiz.play_url)">Copier</button>
-        <a v-if="props.quiz.console_url" :href="props.quiz.console_url" class="rounded bg-emerald-600/20 px-3 py-2 text-sm text-emerald-100 ring-1 ring-emerald-500/30 hover:bg-emerald-600/30">Ouvrir la console</a>
+      <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <div class="text-sm text-white/80">Partage</div>
+        <div class="flex items-center gap-2">
+          <a v-if="props.quiz.participants_url" :href="props.quiz.participants_url" class="rounded bg-white/10 px-3 py-2 text-sm ring-1 ring-white/20 hover:bg-white/15">Participants</a>
+          <a v-if="props.quiz.console_url" :href="props.quiz.console_url" class="rounded bg-emerald-600/20 px-3 py-2 text-sm text-emerald-100 ring-1 ring-emerald-500/30 hover:bg-emerald-600/30">Ouvrir la console</a>
+        </div>
       </div>
-      <p class="mt-2 text-xs text-white/60">Envoyez ce lien aux joueurs pour qu'ils puissent accéder au quiz. Utilisez la console pour piloter l'affichage en direct.</p>
+      <div class="grid gap-4 sm:grid-cols-[auto_1fr] sm:items-start">
+        <QrCodeSvg :svg="props.quiz.qr_svg" alt="QR code de participation" />
+        <div class="space-y-3">
+          <div>
+            <div class="mb-1 text-xs text-white/60">Lien de participation</div>
+            <div class="flex items-center gap-2">
+              <input :value="props.quiz.join_url" readonly class="w-full rounded bg-white/10 px-3 py-2 text-sm text-white ring-1 ring-white/15" />
+              <button type="button" class="rounded bg-white/10 px-3 py-2 text-sm ring-1 ring-white/20 hover:bg-white/15" @click="navigator.clipboard.writeText(props.quiz.join_url)">Copier</button>
+            </div>
+          </div>
+          <div>
+            <div class="mb-1 text-xs text-white/60">Écran de projection</div>
+            <div class="flex items-center gap-2">
+              <input :value="props.quiz.play_url" readonly class="w-full rounded bg-white/10 px-3 py-2 text-sm text-white ring-1 ring-white/15" />
+              <a :href="props.quiz.play_url" target="_blank" class="rounded bg-white/10 px-3 py-2 text-sm ring-1 ring-white/20 hover:bg-white/15">Ouvrir</a>
+            </div>
+          </div>
+          <p class="text-xs text-white/60">Les joueurs s'inscrivent avec le QR code ou le lien de participation. L'écran de projection affiche les questions pour la salle.</p>
+        </div>
+      </div>
     </div>
 
     <!-- Meta form -->

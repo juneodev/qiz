@@ -1,13 +1,14 @@
 <?php
 
+use App\Http\Controllers\ParticipantController;
+use App\Http\Controllers\PlayQuizController;
+use App\Http\Controllers\QuizParticipantsController;
+use App\Models\Answer;
+use App\Models\Question;
+use App\Models\Quiz;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
-use App\Http\Controllers\QuizController;
-use App\Http\Controllers\PlayQuizController;
-use App\Models\Quiz;
-use App\Models\Question;
-use App\Models\Answer;
-use Illuminate\Http\Request;
 
 Route::get('/', function () {
     return Inertia::render('Welcome');
@@ -22,13 +23,22 @@ Route::post('/quiz', function (Request $request) {
     $data = $request->validate([
         'uuid' => ['required', 'uuid'],
     ]);
-    return redirect()->route('quiz.play.show', ['uuid' => $data['uuid']]);
+
+    return redirect()->route('quiz.join', ['uuid' => $data['uuid']]);
 })->name('quiz.enter.submit');
 
+Route::get('/quiz/{uuid}/join', [ParticipantController::class, 'join'])->name('quiz.join');
+Route::post('/quiz/{uuid}/join', [ParticipantController::class, 'store'])->name('quiz.join.store');
+Route::get('/quiz/{uuid}/participate', [ParticipantController::class, 'play'])->name('quiz.participate');
+Route::post('/quiz/{uuid}/answers', [ParticipantController::class, 'storeAnswer'])->name('quiz.answers.store');
+
 Route::get('/quiz/{uuid}', [PlayQuizController::class, 'show'])->name('quiz.play.show');
-Route::post('/quiz/{uuid}', [PlayQuizController::class, 'submit'])->name('quiz.play.submit');
-Route::post('/quiz/{uuid}/advance', [PlayQuizController::class, 'advance'])->name('quiz.play.advance');
-Route::post('/quiz/{uuid}/reset', [PlayQuizController::class, 'reset'])->name('quiz.play.reset');
+Route::post('/quiz/{uuid}/advance', [PlayQuizController::class, 'advance'])
+    ->middleware(['auth', 'verified'])
+    ->name('quiz.play.advance');
+Route::post('/quiz/{uuid}/reset', [PlayQuizController::class, 'reset'])
+    ->middleware(['auth', 'verified'])
+    ->name('quiz.play.reset');
 
 // Authenticated app routes
 Route::middleware(['auth', 'verified'])->group(function () {
@@ -42,7 +52,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
             ->limit(5)
             ->get()
             ->map(function ($quiz) {
-                $quiz->play_url = route('quiz.play.show', ['uuid' => $quiz->uuid]);
+                $quiz->play_url = $quiz->playUrl();
+                $quiz->join_url = $quiz->joinUrl();
+
                 return $quiz;
             });
 
@@ -73,7 +85,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
             ->latest()
             ->get()
             ->map(function ($quiz) {
-                $quiz->play_url = route('quiz.play.show', ['uuid' => $quiz->uuid]);
+                $quiz->play_url = $quiz->playUrl();
+                $quiz->join_url = $quiz->joinUrl();
+
                 return $quiz;
             });
 
@@ -98,7 +112,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         $quiz = $request->user()->quizzes()->create([
             'title' => $validated['title'],
             'description' => $validated['description'] ?? null,
-            'published_at' => !empty($validated['publish']) ? now() : null,
+            'published_at' => ! empty($validated['publish']) ? now() : null,
         ]);
 
         return redirect()->route('quizzes.edit', ['quiz' => $quiz->id]);
@@ -123,7 +137,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
                     return [
                         'id' => $answer->id,
                         'text' => $answer->text,
-                        'is_correct' => (bool)$answer->is_correct,
+                        'is_correct' => (bool) $answer->is_correct,
                         'order' => $answer->order,
                     ];
                 })->values(),
@@ -131,8 +145,11 @@ Route::middleware(['auth', 'verified'])->group(function () {
         })->values();
 
         $quizArray = $quiz->only(['id', 'uuid', 'title', 'description', 'published_at', 'created_at']);
-        $quizArray['play_url'] = route('quiz.play.show', ['uuid' => $quiz->uuid]);
+        $quizArray['play_url'] = $quiz->playUrl();
+        $quizArray['join_url'] = $quiz->joinUrl();
+        $quizArray['qr_svg'] = $quiz->joinQrSvg();
         $quizArray['console_url'] = route('quizzes.console', ['quiz' => $quiz->id]);
+        $quizArray['participants_url'] = route('quizzes.participants', ['quiz' => $quiz->id]);
 
         return Inertia::render('Quizzes/Edit', [
             'quiz' => $quizArray,
@@ -145,14 +162,34 @@ Route::middleware(['auth', 'verified'])->group(function () {
         abort_if($quiz->user_id !== auth()->id(), 404);
 
         $quizArray = $quiz->only(['id', 'uuid', 'title']);
-        $quizArray['play_url'] = route('quiz.play.show', ['uuid' => $quiz->uuid]);
+        $quizArray['play_url'] = $quiz->playUrl();
+        $quizArray['join_url'] = $quiz->joinUrl();
+        $quizArray['qr_svg'] = $quiz->joinQrSvg();
         $quizArray['advance_url'] = route('quiz.play.advance', ['uuid' => $quiz->uuid]);
         $quizArray['reset_url'] = route('quiz.play.reset', ['uuid' => $quiz->uuid]);
+        $quizArray['participants_url'] = route('quizzes.participants', ['quiz' => $quiz->id]);
+        $quizArray['status'] = $quiz->status->value;
+        $quizArray['current_question_index'] = $quiz->current_question_index;
+        $quizArray['total_questions'] = $quiz->questions()->count();
+
+        $participants = $quiz->participants()
+            ->orderBy('created_at')
+            ->get(['id', 'nickname', 'created_at'])
+            ->map(fn ($participant) => [
+                'id' => $participant->id,
+                'nickname' => $participant->nickname,
+                'created_at' => $participant->created_at?->toIso8601String(),
+            ])
+            ->values();
 
         return Inertia::render('Quizzes/Console', [
             'quiz' => $quizArray,
+            'participants' => $participants,
         ]);
     })->name('quizzes.console');
+
+    Route::get('quizzes/{quiz}/participants', [QuizParticipantsController::class, 'index'])
+        ->name('quizzes.participants');
 
     // Update existing quiz
     Route::put('quizzes/{quiz}', function (Request $request, Quiz $quiz) {
@@ -167,7 +204,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         $quiz->update([
             'title' => $validated['title'],
             'description' => $validated['description'] ?? null,
-            'published_at' => !empty($validated['publish']) ? now() : null,
+            'published_at' => ! empty($validated['publish']) ? now() : null,
         ]);
 
         return redirect()->route('dashboard');
@@ -193,6 +230,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
             ->map(function ($q, $idx) {
                 $q['order'] = $q['order'] ?? $idx + 1;
                 $q['answers'] = collect($q['answers'] ?? [])->values()->all();
+
                 return $q;
             })->values();
 
@@ -201,12 +239,12 @@ Route::middleware(['auth', 'verified'])->group(function () {
         foreach ($questionsData as $qIndex => $qData) {
             $question = null;
 
-            if (!empty($qData['id'])) {
+            if (! empty($qData['id'])) {
                 $question = Question::where('quiz_id', $quiz->id)->where('id', $qData['id'])->first();
             }
 
-            if (!$question) {
-                $question = new Question();
+            if (! $question) {
+                $question = new Question;
                 $question->quiz_id = $quiz->id;
             }
 
@@ -220,7 +258,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
             $answersData = collect($qData['answers'] ?? [])
                 ->map(function ($a, $aIdx) {
                     $a['order'] = $a['order'] ?? $aIdx + 1;
-                    $a['is_correct'] = !empty($a['is_correct']);
+                    $a['is_correct'] = ! empty($a['is_correct']);
+
                     return $a;
                 })->values();
 
@@ -228,17 +267,17 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
             foreach ($answersData as $aIndex => $aData) {
                 $answer = null;
-                if (!empty($aData['id'])) {
+                if (! empty($aData['id'])) {
                     $answer = Answer::where('question_id', $question->id)->where('id', $aData['id'])->first();
                 }
 
-                if (!$answer) {
-                    $answer = new Answer();
+                if (! $answer) {
+                    $answer = new Answer;
                     $answer->question_id = $question->id;
                 }
 
                 $answer->text = $aData['text'];
-                $answer->is_correct = (bool)($aData['is_correct'] ?? false);
+                $answer->is_correct = (bool) ($aData['is_correct'] ?? false);
                 $answer->order = $aData['order'] ?? ($aIndex + 1);
                 $answer->save();
 
@@ -247,20 +286,20 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
             // Delete removed answers
             Answer::where('question_id', $question->id)
-                ->when(!empty($keptAnswerIds), fn($q) => $q->whereNotIn('id', $keptAnswerIds))
-                ->when(empty($keptAnswerIds), fn($q) => $q)
+                ->when(! empty($keptAnswerIds), fn ($q) => $q->whereNotIn('id', $keptAnswerIds))
+                ->when(empty($keptAnswerIds), fn ($q) => $q)
                 ->delete();
         }
 
         // Delete removed questions (cascade will delete answers)
         Question::where('quiz_id', $quiz->id)
-            ->when(!empty($keptQuestionIds), fn($q) => $q->whereNotIn('id', $keptQuestionIds))
-            ->when(empty($keptQuestionIds), fn($q) => $q)
+            ->when(! empty($keptQuestionIds), fn ($q) => $q->whereNotIn('id', $keptQuestionIds))
+            ->when(empty($keptQuestionIds), fn ($q) => $q)
             ->delete();
 
         return redirect()->route('quizzes.edit', ['quiz' => $quiz->id]);
     })->name('quizzes.structure');
 });
 
-require __DIR__ . '/settings.php';
-require __DIR__ . '/auth.php';
+require __DIR__.'/settings.php';
+require __DIR__.'/auth.php';
