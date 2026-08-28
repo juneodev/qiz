@@ -1,47 +1,57 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
-import { Link, usePage } from '@inertiajs/vue3'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { router } from '@inertiajs/vue3'
 import QrCodeSvg from '@/components/QrCodeSvg.vue'
 
 interface Answer { id: number; text: string; order?: number }
 interface Question { id: number; text: string; order?: number; answers: Answer[] }
 
-type PageProps = {
-  questions: Question[]
-  total: number
+interface QuizPayload {
   uuid: string
   title: string
   status: 'waiting' | 'live' | 'finished'
   currentIndex: number
+  questions: Question[]
+  total: number
   joinUrl: string
   qrSvg: string
   participantCount: number
 }
 
-const page = usePage<{ props: PageProps }>()
-const props = computed(() => page.props as unknown as PageProps)
+interface DisplayPayload {
+  uuid: string
+  name: string
+}
+
+const props = defineProps<{
+  display: DisplayPayload
+  quiz: QuizPayload | null
+}>()
 
 const letters = ['A', 'B', 'C', 'D', 'E', 'F']
 
-const status = ref(props.value.status)
-const currentIndex = ref(props.value.currentIndex)
-const participantCount = ref(props.value.participantCount)
+const status = ref(props.quiz?.status ?? 'waiting')
+const currentIndex = ref(props.quiz?.currentIndex ?? 0)
+const participantCount = ref(props.quiz?.participantCount ?? 0)
 
-watch(() => [props.value.status, props.value.currentIndex, props.value.participantCount], () => {
-  status.value = props.value.status
-  currentIndex.value = props.value.currentIndex
-  participantCount.value = props.value.participantCount
+watch(() => props.quiz, (value) => {
+  status.value = value?.status ?? 'waiting'
+  currentIndex.value = value?.currentIndex ?? 0
+  participantCount.value = value?.participantCount ?? 0
 })
 
-const total = computed(() => props.value.total ?? (props.value.questions?.length || 0))
+const total = computed(() => props.quiz?.total ?? (props.quiz?.questions?.length || 0))
 const isWaiting = computed(() => status.value === 'waiting')
 const finished = computed(() => status.value === 'finished')
+const hasQuestions = computed(() => (props.quiz?.questions?.length ?? 0) > 0)
 
 const currentQuestion = computed<Question | null>(() => {
-  const list = props.value.questions || []
+  const list = props.quiz?.questions || []
   if (!list.length) return null
   return list[currentIndex.value] ?? null
 })
+
+let pusher: { disconnect: () => void } | null = null
 
 onMounted(async () => {
   try {
@@ -50,40 +60,65 @@ onMounted(async () => {
     const key = (import.meta as any).env?.VITE_PUSHER_APP_KEY
     const cluster = (import.meta as any).env?.VITE_PUSHER_APP_CLUSTER || 'eu'
     if (!Pusher || !key) {
-      console.warn('[Quiz] Pusher not configured. Set VITE_PUSHER_APP_KEY and VITE_PUSHER_APP_CLUSTER.')
+      console.warn('[Display] Pusher not configured. Set VITE_PUSHER_APP_KEY and VITE_PUSHER_APP_CLUSTER.')
       return
     }
-    const pusher = new Pusher(key, { cluster, forceTLS: true })
-    const channel = pusher.subscribe(`quiz.${props.value.uuid}`)
-    channel.bind('advance', (data: { currentIndex?: number; status?: string }) => {
-      if (typeof data?.currentIndex === 'number') currentIndex.value = data.currentIndex
-      if (data?.status) status.value = data.status as PageProps['status']
-    })
-    channel.bind('reset', (data: { currentIndex?: number; status?: string }) => {
-      currentIndex.value = typeof data?.currentIndex === 'number' ? data.currentIndex : 0
-      status.value = (data?.status as PageProps['status']) || 'waiting'
-    })
-    channel.bind('participant-joined', (data: { count?: number }) => {
-      if (typeof data?.count === 'number') participantCount.value = data.count
-    })
+    pusher = new Pusher(key, { cluster, forceTLS: true })
+    const displayChannel = (pusher as any).subscribe(`display.${props.display.uuid}`)
+    const reload = () => router.reload({ preserveScroll: true })
+    displayChannel.bind('attached', reload)
+    displayChannel.bind('detached', reload)
+
+    if (props.quiz?.uuid) {
+      const quizChannel = (pusher as any).subscribe(`quiz.${props.quiz.uuid}`)
+      quizChannel.bind('advance', (data: { currentIndex?: number; status?: string }) => {
+        if (typeof data?.currentIndex === 'number') currentIndex.value = data.currentIndex
+        if (data?.status) status.value = data.status as QuizPayload['status']
+      })
+      quizChannel.bind('reset', (data: { currentIndex?: number; status?: string }) => {
+        currentIndex.value = typeof data?.currentIndex === 'number' ? data.currentIndex : 0
+        status.value = (data?.status as QuizPayload['status']) || 'waiting'
+      })
+      quizChannel.bind('participant-joined', (data: { count?: number }) => {
+        if (typeof data?.count === 'number') participantCount.value = data.count
+      })
+    }
   } catch (e) {
-    console.warn('[Quiz] Unable to load pusher-js:', e)
+    console.warn('[Display] Unable to load pusher-js:', e)
   }
+})
+
+onUnmounted(() => {
+  pusher?.disconnect()
 })
 </script>
 
 <template>
   <div class="min-h-dvh bg-[#102846] text-white">
-    <div class="mx-auto max-w-6xl px-6 py-10" v-if="props.questions && props.questions.length">
+    <div v-if="!props.quiz" class="mx-auto flex min-h-dvh max-w-3xl flex-col items-center justify-center px-6 text-center">
+      <p class="text-sm uppercase tracking-[0.2em] text-white/60">Affichage</p>
+      <h1 class="mt-3 text-4xl font-semibold tracking-wide sm:text-5xl">{{ props.display.name }}</h1>
+      <p class="mt-4 text-lg text-white/80">Aucun jeu rattaché.</p>
+      <p class="mt-2 text-sm text-white/60">Rattachez un quiz depuis l’espace hôte pour projeter dans la salle.</p>
+    </div>
+
+    <div v-else-if="!hasQuestions" class="mx-auto flex min-h-dvh max-w-3xl flex-col items-center justify-center px-6 text-center">
+      <p class="text-sm uppercase tracking-[0.2em] text-white/60">{{ props.display.name }}</p>
+      <h1 class="mt-3 text-4xl font-semibold tracking-wide sm:text-5xl">{{ props.quiz.title }}</h1>
+      <p class="mt-4 text-lg text-white/80">Aucune question disponible</p>
+      <p class="mt-2 text-sm text-white/60">Ce quiz ne contient pas de questions pour le moment.</p>
+    </div>
+
+    <div v-else class="mx-auto max-w-6xl px-6 py-10">
       <div v-if="isWaiting" class="mx-auto max-w-3xl text-center">
         <p class="text-sm uppercase tracking-[0.2em] text-white/60">Prochain quiz</p>
-        <h1 class="mt-3 text-4xl font-semibold tracking-wide sm:text-5xl">{{ props.title }}</h1>
+        <h1 class="mt-3 text-4xl font-semibold tracking-wide sm:text-5xl">{{ props.quiz.title }}</h1>
         <p class="mt-4 text-lg text-white/80">Scannez le QR code ou ouvrez le lien pour rejoindre.</p>
 
         <div class="mt-8 flex flex-col items-center gap-6">
-          <QrCodeSvg :svg="props.qrSvg" alt="QR code de participation" />
+          <QrCodeSvg :svg="props.quiz.qrSvg" alt="QR code de participation" />
           <div class="w-full max-w-xl">
-            <input :value="props.joinUrl" readonly class="h-11 w-full rounded-xl bg-white/10 px-4 text-center text-sm text-white ring-1 ring-white/15" />
+            <input :value="props.quiz.joinUrl" readonly class="h-11 w-full rounded-xl bg-white/10 px-4 text-center text-sm text-white ring-1 ring-white/15" />
           </div>
           <div class="rounded-full bg-white/10 px-5 py-2 text-sm ring-1 ring-white/20">
             {{ participantCount }} participant{{ participantCount === 1 ? '' : 's' }} en attente
@@ -94,7 +129,7 @@ onMounted(async () => {
       <template v-else>
         <div class="mb-6 flex items-center justify-between text-sm text-white/80">
           <div>Question {{ Math.min((currentIndex ?? 0) + 1, total) }} / {{ total }}</div>
-          <div>{{ props.title }}</div>
+          <div>{{ props.quiz.title }}</div>
         </div>
 
         <div v-if="finished" class="rounded-2xl bg-[#1f57c7]/95 p-8 text-center shadow-2xl ring-1 ring-white/10">
@@ -129,15 +164,6 @@ onMounted(async () => {
           </div>
         </template>
       </template>
-
-      <div class="mt-10 text-center text-sm text-white/70">
-        <Link class="underline decoration-white/30 underline-offset-4 hover:text-white" href="/">Retour à l'accueil</Link>
-      </div>
-    </div>
-
-    <div v-else class="mx-auto max-w-3xl px-6 py-16 text-center text-white/80">
-      <h2 class="text-2xl font-semibold">Aucune question disponible</h2>
-      <p class="mt-2 text-sm">Ce quiz ne contient pas de questions pour le moment.</p>
     </div>
   </div>
 </template>

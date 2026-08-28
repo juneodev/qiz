@@ -14,7 +14,6 @@ interface Quiz {
   description?: string | null;
   published_at?: string | null;
   created_at: string;
-  play_url: string;
   join_url: string;
 }
 

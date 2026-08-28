@@ -23,6 +23,12 @@ interface QuestionItem {
   answers: AnswerItem[]
 }
 
+interface AttachedDisplay {
+  id: number
+  name: string
+  url: string
+}
+
 interface Quiz {
   id: number
   uuid: string
@@ -30,14 +36,13 @@ interface Quiz {
   description?: string | null
   published_at?: string | null
   created_at: string
-  play_url: string
   join_url: string
   qr_svg: string
   console_url?: string
   participants_url?: string
 }
 
-const props = defineProps<{ quiz: Quiz, questions: QuestionItem[] }>()
+const props = defineProps<{ quiz: Quiz, questions: QuestionItem[], displays: AttachedDisplay[] }>()
 
 const form = useForm({
   title: props.quiz.title ?? '',
@@ -150,10 +155,17 @@ watch(
           </div>
           <div>
             <div class="mb-1 text-xs text-white/60">Écran de projection</div>
-            <div class="flex items-center gap-2">
-              <input :value="props.quiz.play_url" readonly class="w-full rounded bg-white/10 px-3 py-2 text-sm text-white ring-1 ring-white/15" />
-              <a :href="props.quiz.play_url" target="_blank" class="rounded bg-white/10 px-3 py-2 text-sm ring-1 ring-white/20 hover:bg-white/15">Ouvrir</a>
+            <div v-if="props.displays.length" class="space-y-2">
+              <div v-for="display in props.displays" :key="display.id" class="flex items-center gap-2">
+                <input :value="display.url" readonly class="w-full rounded bg-white/10 px-3 py-2 text-sm text-white ring-1 ring-white/15" />
+                <span class="shrink-0 text-xs text-white/60">{{ display.name }}</span>
+                <a :href="display.url" target="_blank" class="rounded bg-white/10 px-3 py-2 text-sm ring-1 ring-white/20 hover:bg-white/15">Ouvrir</a>
+              </div>
             </div>
+            <p v-else class="text-sm text-white/70">
+              Aucun affichage rattaché.
+              <a href="/displays" class="underline decoration-white/30 underline-offset-4 hover:text-white">Rattacher un affichage</a>
+            </p>
           </div>
           <p class="text-xs text-white/60">Les joueurs s'inscrivent avec le QR code ou le lien de participation. L'écran de projection affiche les questions pour la salle.</p>
         </div>

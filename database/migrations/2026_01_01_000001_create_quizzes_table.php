@@ -5,9 +5,6 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration {
-    /**
-     * Run the migrations.
-     */
     public function up(): void
     {
         Schema::create('quizzes', function (Blueprint $table) {
@@ -17,13 +14,12 @@ return new class extends Migration {
             $table->string('title');
             $table->text('description')->nullable();
             $table->timestamp('published_at')->nullable();
+            $table->string('status')->default('waiting');
+            $table->unsignedInteger('current_question_index')->default(0);
             $table->timestamps();
         });
     }
 
-    /**
-     * Reverse the migrations.
-     */
     public function down(): void
     {
         Schema::dropIfExists('quizzes');

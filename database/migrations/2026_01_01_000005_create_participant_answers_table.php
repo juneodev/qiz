@@ -5,28 +5,21 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration {
-    /**
-     * Run the migrations.
-     */
     public function up(): void
     {
-        Schema::create('answers', function (Blueprint $table) {
+        Schema::create('participant_answers', function (Blueprint $table) {
             $table->id();
+            $table->foreignId('participant_id')->constrained('participants')->cascadeOnDelete();
             $table->foreignId('question_id')->constrained('questions')->cascadeOnDelete();
-            $table->string('text');
-            $table->boolean('is_correct')->default(false);
-            $table->unsignedInteger('order')->default(0);
+            $table->foreignId('answer_id')->constrained('answers')->cascadeOnDelete();
             $table->timestamps();
 
-            $table->index(['question_id', 'order']);
+            $table->unique(['participant_id', 'question_id']);
         });
     }
 
-    /**
-     * Reverse the migrations.
-     */
     public function down(): void
     {
-        Schema::dropIfExists('answers');
+        Schema::dropIfExists('participant_answers');
     }
 };

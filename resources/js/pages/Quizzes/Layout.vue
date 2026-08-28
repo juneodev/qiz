@@ -35,14 +35,20 @@ const handleLogout = () => {
                 <a
                     href="/quizzes"
                     class="inline-flex items-center border-b-2 border-transparent px-1.5 py-3 text-sm text-white/80 hover:text-white"
-                    :class="{ 'border-white text-white': $page.url.startsWith('/quizzes') && !$page.url.endsWith('/create') }"
+                    :class="{ 'border-white text-white': $page.url.startsWith('/quizzes') && $page.url !== '/quizzes/create' }"
                     >Mes quizzes</a
                 >
                 <a
                     href="/quizzes/create"
                     class="inline-flex items-center border-b-2 border-transparent px-1.5 py-3 text-sm text-white/80 hover:text-white"
-                    :class="{ 'border-white text-white': $page.url.endsWith('/create') }"
+                    :class="{ 'border-white text-white': $page.url === '/quizzes/create' }"
                     >Créer un quiz</a
+                >
+                <a
+                    href="/displays"
+                    class="inline-flex items-center border-b-2 border-transparent px-1.5 py-3 text-sm text-white/80 hover:text-white"
+                    :class="{ 'border-white text-white': $page.url.startsWith('/displays') }"
+                    >Mes affichages</a
                 >
             </div>
         </div>

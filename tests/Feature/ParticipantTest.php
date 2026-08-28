@@ -224,17 +224,3 @@ test('entering a quiz uuid redirects to the join page', function () {
         'uuid' => $quiz->uuid,
     ])->assertRedirect(route('quiz.join', $quiz->uuid));
 });
-
-test('the public display shows a waiting lobby with a join qr code', function () {
-    $quiz = makeQuizWithQuestions();
-
-    $this->get(route('quiz.play.show', $quiz->uuid))
-        ->assertOk()
-        ->assertInertia(fn (Assert $page) => $page
-            ->component('Quiz/Play')
-            ->where('status', 'waiting')
-            ->where('title', $quiz->title)
-            ->has('qrSvg')
-            ->has('joinUrl')
-        );
-});

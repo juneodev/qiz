@@ -1,5 +1,7 @@
 <?php
 
+use App\Http\Controllers\DisplayController;
+use App\Http\Controllers\DisplaysController;
 use App\Http\Controllers\ParticipantController;
 use App\Http\Controllers\PlayQuizController;
 use App\Http\Controllers\QuizParticipantsController;
@@ -32,7 +34,8 @@ Route::post('/quiz/{uuid}/join', [ParticipantController::class, 'store'])->name(
 Route::get('/quiz/{uuid}/participate', [ParticipantController::class, 'play'])->name('quiz.participate');
 Route::post('/quiz/{uuid}/answers', [ParticipantController::class, 'storeAnswer'])->name('quiz.answers.store');
 
-Route::get('/quiz/{uuid}', [PlayQuizController::class, 'show'])->name('quiz.play.show');
+Route::get('/a/{uuid}', [DisplayController::class, 'show'])->name('displays.show');
+
 Route::post('/quiz/{uuid}/advance', [PlayQuizController::class, 'advance'])
     ->middleware(['auth', 'verified'])
     ->name('quiz.play.advance');
@@ -52,7 +55,6 @@ Route::middleware(['auth', 'verified'])->group(function () {
             ->limit(5)
             ->get()
             ->map(function ($quiz) {
-                $quiz->play_url = $quiz->playUrl();
                 $quiz->join_url = $quiz->joinUrl();
 
                 return $quiz;
@@ -85,7 +87,6 @@ Route::middleware(['auth', 'verified'])->group(function () {
             ->latest()
             ->get()
             ->map(function ($quiz) {
-                $quiz->play_url = $quiz->playUrl();
                 $quiz->join_url = $quiz->joinUrl();
 
                 return $quiz;
@@ -145,7 +146,6 @@ Route::middleware(['auth', 'verified'])->group(function () {
         })->values();
 
         $quizArray = $quiz->only(['id', 'uuid', 'title', 'description', 'published_at', 'created_at']);
-        $quizArray['play_url'] = $quiz->playUrl();
         $quizArray['join_url'] = $quiz->joinUrl();
         $quizArray['qr_svg'] = $quiz->joinQrSvg();
         $quizArray['console_url'] = route('quizzes.console', ['quiz' => $quiz->id]);
@@ -154,6 +154,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         return Inertia::render('Quizzes/Edit', [
             'quiz' => $quizArray,
             'questions' => $questions,
+            'displays' => $quiz->attachedDisplaysPayload(),
         ]);
     })->name('quizzes.edit');
 
@@ -162,7 +163,6 @@ Route::middleware(['auth', 'verified'])->group(function () {
         abort_if($quiz->user_id !== auth()->id(), 404);
 
         $quizArray = $quiz->only(['id', 'uuid', 'title']);
-        $quizArray['play_url'] = $quiz->playUrl();
         $quizArray['join_url'] = $quiz->joinUrl();
         $quizArray['qr_svg'] = $quiz->joinQrSvg();
         $quizArray['advance_url'] = route('quiz.play.advance', ['uuid' => $quiz->uuid]);
@@ -185,11 +185,19 @@ Route::middleware(['auth', 'verified'])->group(function () {
         return Inertia::render('Quizzes/Console', [
             'quiz' => $quizArray,
             'participants' => $participants,
+            'displays' => $quiz->attachedDisplaysPayload(),
         ]);
     })->name('quizzes.console');
 
     Route::get('quizzes/{quiz}/participants', [QuizParticipantsController::class, 'index'])
         ->name('quizzes.participants');
+
+    Route::get('displays', [DisplaysController::class, 'index'])->name('displays.index');
+    Route::get('displays/create', [DisplaysController::class, 'create'])->name('displays.create');
+    Route::post('displays', [DisplaysController::class, 'store'])->name('displays.store');
+    Route::get('displays/{display}/edit', [DisplaysController::class, 'edit'])->name('displays.edit');
+    Route::put('displays/{display}', [DisplaysController::class, 'update'])->name('displays.update');
+    Route::delete('displays/{display}', [DisplaysController::class, 'destroy'])->name('displays.destroy');
 
     // Update existing quiz
     Route::put('quizzes/{quiz}', function (Request $request, Quiz $quiz) {

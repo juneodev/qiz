@@ -1,0 +1,169 @@
+<?php
+
+use App\Events\DisplayAttachmentUpdated;
+use App\Models\Answer;
+use App\Models\Display;
+use App\Models\Question;
+use App\Models\Quiz;
+use App\Models\User;
+use Illuminate\Support\Facades\Event;
+use Inertia\Testing\AssertableInertia as Assert;
+
+function makeDisplayQuiz(?User $owner = null, int $questionCount = 2): Quiz
+{
+    $owner ??= User::factory()->create();
+    $quiz = Quiz::factory()->for($owner)->create();
+
+    for ($i = 1; $i <= $questionCount; $i++) {
+        $question = Question::factory()->for($quiz)->create([
+            'text' => "Question {$i}",
+            'order' => $i,
+        ]);
+
+        Answer::factory()->for($question)->create([
+            'text' => 'Bonne réponse',
+            'order' => 1,
+            'is_correct' => true,
+        ]);
+        Answer::factory()->for($question)->create([
+            'text' => 'Mauvaise réponse',
+            'order' => 2,
+            'is_correct' => false,
+        ]);
+    }
+
+    return $quiz->fresh(['questions.answers', 'user']);
+}
+
+test('the public display shows an idle screen when nothing is attached', function () {
+    $display = Display::factory()->create(['name' => 'Salle principale']);
+
+    $this->get(route('displays.show', $display->uuid))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Display/Show')
+            ->where('display.name', 'Salle principale')
+            ->where('display.uuid', $display->uuid)
+            ->where('quiz', null)
+        );
+});
+
+test('the public display shows a waiting lobby when a quiz is attached', function () {
+    $quiz = makeDisplayQuiz();
+    $display = Display::factory()->for($quiz->user)->create(['name' => 'Salle principale']);
+    $display->displayable()->associate($quiz);
+    $display->save();
+
+    $this->get(route('displays.show', $display->uuid))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Display/Show')
+            ->where('display.name', 'Salle principale')
+            ->where('quiz.status', 'waiting')
+            ->where('quiz.title', $quiz->title)
+            ->has('quiz.qrSvg')
+            ->has('quiz.joinUrl')
+        );
+});
+
+test('the public display stays up when the attached quiz has no questions', function () {
+    $quiz = Quiz::factory()->create();
+    $display = Display::factory()->for($quiz->user)->create();
+    $display->displayable()->associate($quiz);
+    $display->save();
+
+    $this->get(route('displays.show', $display->uuid))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Display/Show')
+            ->where('quiz.title', $quiz->title)
+            ->where('quiz.total', 0)
+        );
+});
+
+test('the former quiz projection url no longer exists', function () {
+    $quiz = Quiz::factory()->create();
+
+    $this->get('/quiz/'.$quiz->uuid)->assertNotFound();
+});
+
+test('guests cannot manage displays', function () {
+    $this->get(route('displays.index'))->assertRedirect(route('login'));
+});
+
+test('the owner can create a display', function () {
+    $owner = User::factory()->create();
+
+    $this->actingAs($owner)
+        ->post(route('displays.store'), ['name' => 'Salle principale'])
+        ->assertRedirect();
+
+    $this->assertDatabaseHas('displays', [
+        'user_id' => $owner->id,
+        'name' => 'Salle principale',
+    ]);
+});
+
+test('the owner can attach a quiz to a display', function () {
+    Event::fake([DisplayAttachmentUpdated::class]);
+
+    $owner = User::factory()->create();
+    $quiz = Quiz::factory()->for($owner)->create();
+    $display = Display::factory()->for($owner)->create(['name' => 'Salle 1']);
+
+    $this->actingAs($owner)
+        ->put(route('displays.update', $display), [
+            'name' => 'Salle 1',
+            'quiz_id' => $quiz->id,
+        ])
+        ->assertRedirect(route('displays.edit', $display));
+
+    expect($display->fresh()->displayable_id)->toBe($quiz->id)
+        ->and($display->fresh()->displayable_type)->toBe(Quiz::class);
+
+    Event::assertDispatched(DisplayAttachmentUpdated::class);
+});
+
+test('a display cannot be attached to another users quiz', function () {
+    $owner = User::factory()->create();
+    $other = User::factory()->create();
+    $display = Display::factory()->for($owner)->create(['name' => 'Salle 1']);
+    $foreignQuiz = Quiz::factory()->for($other)->create();
+
+    $this->actingAs($owner)
+        ->from(route('displays.edit', $display))
+        ->put(route('displays.update', $display), [
+            'name' => 'Salle 1',
+            'quiz_id' => $foreignQuiz->id,
+        ])
+        ->assertRedirect(route('displays.edit', $display))
+        ->assertSessionHasErrors('quiz_id');
+
+    expect($display->fresh()->displayable_id)->toBeNull();
+});
+
+test('another user cannot edit a display', function () {
+    $display = Display::factory()->create();
+    $other = User::factory()->create();
+
+    $this->actingAs($other)
+        ->get(route('displays.edit', $display))
+        ->assertNotFound();
+});
+
+test('the quiz console lists attached displays', function () {
+    $owner = User::factory()->create();
+    $quiz = Quiz::factory()->for($owner)->create();
+    $display = Display::factory()->for($owner)->create(['name' => 'Salle principale']);
+    $display->displayable()->associate($quiz);
+    $display->save();
+
+    $this->actingAs($owner)
+        ->get(route('quizzes.console', $quiz))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Quizzes/Console')
+            ->has('displays', 1)
+            ->where('displays.0.name', 'Salle principale')
+        );
+});

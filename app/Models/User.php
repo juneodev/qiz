@@ -52,4 +52,9 @@ class User extends Authenticatable
     {
         return $this->hasMany(Quiz::class);
     }
+
+    public function displays(): HasMany
+    {
+        return $this->hasMany(Display::class);
+    }
 }

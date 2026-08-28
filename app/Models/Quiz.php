@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Support\Str;
 
 class Quiz extends Model
@@ -55,6 +56,11 @@ class Quiz extends Model
         return $this->hasMany(Participant::class);
     }
 
+    public function displays(): MorphMany
+    {
+        return $this->morphMany(Display::class, 'displayable');
+    }
+
     public function currentQuestion(): ?Question
     {
         if ($this->status !== QuizStatus::Live) {
@@ -67,9 +73,17 @@ class Quiz extends Model
             ->first();
     }
 
-    public function playUrl(): string
+    /**
+     * @return list<array{id: int, name: string, url: string}>
+     */
+    public function attachedDisplaysPayload(): array
     {
-        return route('quiz.play.show', ['uuid' => $this->uuid]);
+        return $this->displays()
+            ->orderBy('name')
+            ->get()
+            ->map(fn (Display $display) => $display->publicSummary())
+            ->values()
+            ->all();
     }
 
     public function joinUrl(): string

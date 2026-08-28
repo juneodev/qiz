@@ -2,56 +2,36 @@
 
 namespace Database\Seeders;
 
-use App\Models\Answer;
-use App\Models\Question;
+use App\Enums\QuizStatus;
 use App\Models\User;
 use Illuminate\Database\Seeder;
 
-class SampleQuizSeeder extends Seeder
+class QuizSeeder extends Seeder
 {
     public function run(): void
     {
-        $user = User::first();
-        if (!$user) {
-            $user = User::create([
-                'name' => 'Demo User',
-                'email' => 'demo@example.com',
-                'password' => 'password', // Will be hashed by User casts
-            ]);
-        }
+        $user = User::query()->where('email', DemoUserSeeder::EMAIL)->firstOrFail();
 
         foreach ($this->quizzes() as $quizData) {
-            $quiz = $user->quizzes()->firstOrCreate(
-                ['title' => $quizData['title']],
-                [
-                    'description' => $quizData['description'],
-                    'published_at' => now(),
-                ]
-            );
+            $quiz = $user->quizzes()->create([
+                'title' => $quizData['title'],
+                'description' => $quizData['description'],
+                'published_at' => $quizData['published'] ? now() : null,
+                'status' => QuizStatus::Waiting,
+                'current_question_index' => 0,
+            ]);
 
-            if ($quiz->published_at === null) {
-                $quiz->update(['published_at' => now()]);
-            }
+            foreach ($quizData['questions'] as $qIndex => $questionData) {
+                $question = $quiz->questions()->create([
+                    'text' => $questionData['text'],
+                    'order' => $qIndex + 1,
+                ]);
 
-            foreach ($quizData['questions'] as $idx => $qData) {
-                $question = Question::firstOrCreate(
-                    [
-                        'quiz_id' => $quiz->id,
-                        'text' => $qData['text'],
-                    ],
-                    [
-                        'order' => $idx + 1,
-                    ]
-                );
-
-                Answer::where('question_id', $question->id)->delete();
-
-                foreach ($qData['answers'] as $aIdx => $aData) {
-                    Answer::create([
-                        'question_id' => $question->id,
-                        'text' => $aData['text'],
-                        'is_correct' => $aData['is_correct'],
-                        'order' => $aIdx + 1,
+                foreach ($questionData['answers'] as $aIndex => $answerData) {
+                    $question->answers()->create([
+                        'text' => $answerData['text'],
+                        'is_correct' => $answerData['is_correct'],
+                        'order' => $aIndex + 1,
                     ]);
                 }
             }
@@ -59,7 +39,7 @@ class SampleQuizSeeder extends Seeder
     }
 
     /**
-     * @return list<array{title: string, description: string, questions: list<array{text: string, answers: list<array{text: string, is_correct: bool}>}>}>
+     * @return list<array{title: string, description: string, published: bool, questions: list<array{text: string, answers: list<array{text: string, is_correct: bool}>}>}>
      */
     private function quizzes(): array
     {
@@ -67,6 +47,7 @@ class SampleQuizSeeder extends Seeder
             [
                 'title' => 'Géographie',
                 'description' => 'Un quiz sur les capitales, les pays et les continents.',
+                'published' => true,
                 'questions' => [
                     [
                         'text' => 'Quelle est la capitale de l’Australie ?',
@@ -100,6 +81,7 @@ class SampleQuizSeeder extends Seeder
             [
                 'title' => 'Cinéma',
                 'description' => 'Un quiz sur les films, les réalisateurs et les récompenses.',
+                'published' => true,
                 'questions' => [
                     [
                         'text' => 'Qui a réalisé le film Inception ?',
@@ -133,6 +115,7 @@ class SampleQuizSeeder extends Seeder
             [
                 'title' => 'Sciences',
                 'description' => 'Un quiz sur quelques notions scientifiques essentielles.',
+                'published' => true,
                 'questions' => [
                     [
                         'text' => 'Quel est le symbole chimique de l’or ?',
@@ -159,6 +142,22 @@ class SampleQuizSeeder extends Seeder
                             ['text' => 'Watt', 'is_correct' => false],
                             ['text' => 'Pascal', 'is_correct' => false],
                             ['text' => 'Newton', 'is_correct' => true],
+                        ],
+                    ],
+                ],
+            ],
+            [
+                'title' => 'Brouillon — Culture générale',
+                'description' => 'Un quiz encore en préparation, pour tester l’écran de brouillon.',
+                'published' => false,
+                'questions' => [
+                    [
+                        'text' => 'Combien y a-t-il de couleurs dans un arc-en-ciel ?',
+                        'answers' => [
+                            ['text' => '5', 'is_correct' => false],
+                            ['text' => '6', 'is_correct' => false],
+                            ['text' => '7', 'is_correct' => true],
+                            ['text' => '8', 'is_correct' => false],
                         ],
                     ],
                 ],

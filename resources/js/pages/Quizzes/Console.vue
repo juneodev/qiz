@@ -15,11 +15,16 @@ interface Participant {
   created_at: string | null
 }
 
+interface AttachedDisplay {
+  id: number
+  name: string
+  url: string
+}
+
 interface Quiz {
   id: number
   uuid: string
   title: string
-  play_url: string
   join_url: string
   qr_svg: string
   advance_url: string
@@ -33,6 +38,7 @@ interface Quiz {
 const props = defineProps<{
   quiz: Quiz
   participants: Participant[]
+  displays: AttachedDisplay[]
 }>()
 
 const sending = ref<{ advance?: boolean; reset?: boolean }>({})
@@ -142,10 +148,18 @@ onMounted(async () => {
           </div>
           <div>
             <div class="mb-1 text-xs text-white/60">Écran de projection</div>
-            <div class="flex flex-wrap items-center gap-2">
-              <input :value="props.quiz.play_url" readonly class="h-10 min-w-0 flex-1 rounded bg-white/10 px-3 text-sm text-white ring-1 ring-white/15" />
-              <a :href="props.quiz.play_url" target="_blank" class="rounded bg-white/10 px-3 py-2 text-sm ring-1 ring-white/20 hover:bg-white/15">Ouvrir</a>
+            <div v-if="props.displays.length" class="space-y-2">
+              <div v-for="display in props.displays" :key="display.id" class="flex flex-wrap items-center gap-2">
+                <input :value="display.url" readonly class="h-10 min-w-0 flex-1 rounded bg-white/10 px-3 text-sm text-white ring-1 ring-white/15" />
+                <span class="text-xs text-white/60">{{ display.name }}</span>
+                <button type="button" class="rounded bg-white/10 px-3 py-2 text-sm ring-1 ring-white/20 hover:bg-white/15" @click="navigator.clipboard.writeText(display.url)">Copier</button>
+                <a :href="display.url" target="_blank" class="rounded bg-white/10 px-3 py-2 text-sm ring-1 ring-white/20 hover:bg-white/15">Ouvrir</a>
+              </div>
             </div>
+            <p v-else class="text-sm text-white/70">
+              Aucun affichage rattaché.
+              <a href="/displays" class="underline decoration-white/30 underline-offset-4 hover:text-white">Rattacher un affichage</a>
+            </p>
           </div>
         </div>
       </div>
@@ -182,7 +196,7 @@ onMounted(async () => {
     </div>
 
     <div class="mt-8 text-sm text-white/70">
-      Conseils: ouvrez l'affichage public du quiz dans un autre onglet/écran, partagez le QR code, puis démarrez quand tout le monde a rejoint.
+      Conseils: ouvrez l'affichage public dans un autre onglet/écran, partagez le QR code, puis démarrez quand tout le monde a rejoint.
     </div>
   </div>
 </template>
