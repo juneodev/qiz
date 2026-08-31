@@ -21,11 +21,14 @@ class PlayQuizController extends Controller
         if ($quiz->status === QuizStatus::Waiting) {
             $quiz->status = QuizStatus::Live;
             $quiz->current_question_index = 0;
+            $quiz->question_started_at = now();
         } elseif ($quiz->status === QuizStatus::Live) {
             if ($quiz->current_question_index >= $total - 1) {
                 $quiz->status = QuizStatus::Finished;
+                $quiz->question_started_at = null;
             } else {
                 $quiz->current_question_index++;
+                $quiz->question_started_at = now();
             }
         }
 
@@ -42,6 +45,7 @@ class PlayQuizController extends Controller
 
         $quiz->status = QuizStatus::Waiting;
         $quiz->current_question_index = 0;
+        $quiz->question_started_at = null;
         $quiz->save();
 
         ParticipantAnswer::query()
@@ -71,6 +75,7 @@ class PlayQuizController extends Controller
             $total,
             $action,
             $quiz->status->value,
+            $quiz->answerClosesAt()?->toIso8601String(),
         ));
     }
 }

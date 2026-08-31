@@ -1,5 +1,6 @@
 <?php
 
+use App\Enums\QuizStatus;
 use App\Events\DisplayAttachmentUpdated;
 use App\Models\Answer;
 use App\Models\Display;
@@ -61,8 +62,12 @@ test('the public display shows a waiting lobby when a quiz is attached', functio
             ->where('display.name', 'Salle principale')
             ->where('quiz.status', 'waiting')
             ->where('quiz.title', $quiz->title)
+            ->where('quiz.answerClosesAt', null)
+            ->where('quiz.answerDurationSeconds', 20)
+            ->where('quiz.correctAnswerIds', [])
             ->has('quiz.qrSvg')
             ->has('quiz.joinUrl')
+            ->where('quiz.recap', null)
         );
 });
 
@@ -78,6 +83,73 @@ test('the public display stays up when the attached quiz has no questions', func
             ->component('Display/Show')
             ->where('quiz.title', $quiz->title)
             ->where('quiz.total', 0)
+        );
+});
+
+test('the public display hides correct answers while the window is open', function () {
+    $quiz = makeDisplayQuiz();
+    $quiz->update([
+        'status' => QuizStatus::Live,
+        'current_question_index' => 0,
+        'question_started_at' => now(),
+    ]);
+    $display = Display::factory()->for($quiz->user)->create(['name' => 'Salle principale']);
+    $display->displayable()->associate($quiz);
+    $display->save();
+
+    $this->get(route('displays.show', $display->uuid))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Display/Show')
+            ->where('quiz.correctAnswerIds', [])
+            ->missing('quiz.questions.0.answers.0.is_correct')
+        );
+});
+
+test('the public display reveals the correct answers after the timer', function () {
+    $quiz = makeDisplayQuiz();
+    $quiz->update([
+        'status' => QuizStatus::Live,
+        'current_question_index' => 0,
+        'question_started_at' => now(),
+    ]);
+    $display = Display::factory()->for($quiz->user)->create(['name' => 'Salle principale']);
+    $display->displayable()->associate($quiz);
+    $display->save();
+    $correctId = $quiz->questions->first()->answers->firstWhere('is_correct', true)->id;
+
+    $this->travel(21)->seconds();
+
+    $this->get(route('displays.show', $display->uuid))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Display/Show')
+            ->where('quiz.correctAnswerIds', [$correctId])
+            ->missing('quiz.questions.0.answers.0.is_correct')
+            ->where('quiz.recap', null)
+        );
+});
+
+test('the public display shows a recap when the quiz is finished', function () {
+    $quiz = makeDisplayQuiz();
+    $quiz->update([
+        'status' => QuizStatus::Finished,
+        'current_question_index' => 1,
+        'question_started_at' => null,
+    ]);
+    $display = Display::factory()->for($quiz->user)->create(['name' => 'Salle principale']);
+    $display->displayable()->associate($quiz);
+    $display->save();
+    $firstCorrect = $quiz->questions->first()->answers->firstWhere('is_correct', true);
+
+    $this->get(route('displays.show', $display->uuid))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Display/Show')
+            ->where('quiz.recap.total', 2)
+            ->where('quiz.recap.questions.0.text', $quiz->questions->first()->text)
+            ->where('quiz.recap.questions.0.correctTexts.0', $firstCorrect->text)
+            ->missing('quiz.recap.questions.0.selectedAnswerId')
         );
 });
 

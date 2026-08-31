@@ -9,11 +9,14 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
 
 class Quiz extends Model
 {
     use HasFactory;
+
+    public const ANSWER_DURATION_SECONDS = 20;
 
     protected $fillable = [
         'title',
@@ -22,12 +25,14 @@ class Quiz extends Model
         'uuid',
         'status',
         'current_question_index',
+        'question_started_at',
     ];
 
     protected $casts = [
         'published_at' => 'datetime',
         'status' => QuizStatus::class,
         'current_question_index' => 'integer',
+        'question_started_at' => 'datetime',
     ];
 
     protected static function boot()
@@ -71,6 +76,47 @@ class Quiz extends Model
             ->with(['answers' => fn ($q) => $q->orderBy('order')])
             ->skip($this->current_question_index)
             ->first();
+    }
+
+    public function answerClosesAt(): ?Carbon
+    {
+        if ($this->status !== QuizStatus::Live || $this->question_started_at === null) {
+            return null;
+        }
+
+        return $this->question_started_at->copy()->addSeconds(self::ANSWER_DURATION_SECONDS);
+    }
+
+    public function isAnswerWindowOpen(): bool
+    {
+        $closesAt = $this->answerClosesAt();
+
+        return $closesAt !== null && ! now()->greaterThan($closesAt);
+    }
+
+    /**
+     * @return list<int>
+     */
+    public function revealedCorrectAnswerIds(?Question $question = null): array
+    {
+        if ($this->isAnswerWindowOpen()) {
+            return [];
+        }
+
+        $question ??= $this->currentQuestion();
+
+        if (! $question) {
+            return [];
+        }
+
+        $question->loadMissing('answers');
+
+        return $question->answers
+            ->where('is_correct', true)
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->values()
+            ->all();
     }
 
     /**
@@ -122,5 +168,83 @@ class Quiz extends Model
                 'order' => $answer->order,
             ])->values()->all(),
         ];
+    }
+
+    /**
+     * @return array{score: int, total: int, questions: list<array{id: int, text: string, selectedAnswerId: int|null, selectedText: string|null, correctAnswerIds: list<int>, correctTexts: list<string>, isCorrect: bool}>}|null
+     */
+    public function participantRecap(Participant $participant): ?array
+    {
+        if ($this->status !== QuizStatus::Finished) {
+            return null;
+        }
+
+        $questions = $this->recapQuestions();
+        $answersByQuestionId = $participant->answers()
+            ->get(['question_id', 'answer_id'])
+            ->keyBy('question_id');
+
+        $items = $questions->map(function (Question $question) use ($answersByQuestionId) {
+            $correctAnswers = $question->answers->where('is_correct', true)->values();
+            $correctIds = $correctAnswers->pluck('id')->map(fn ($id) => (int) $id)->all();
+            $selectedId = $answersByQuestionId->get($question->id)?->answer_id;
+            $selectedId = $selectedId !== null ? (int) $selectedId : null;
+            $selected = $selectedId !== null
+                ? $question->answers->firstWhere('id', $selectedId)
+                : null;
+
+            return [
+                'id' => $question->id,
+                'text' => $question->text,
+                'selectedAnswerId' => $selectedId,
+                'selectedText' => $selected?->text,
+                'correctAnswerIds' => $correctIds,
+                'correctTexts' => $correctAnswers->pluck('text')->values()->all(),
+                'isCorrect' => $selectedId !== null && in_array($selectedId, $correctIds, true),
+            ];
+        })->values()->all();
+
+        return [
+            'score' => collect($items)->where('isCorrect', true)->count(),
+            'total' => count($items),
+            'questions' => $items,
+        ];
+    }
+
+    /**
+     * @return array{total: int, questions: list<array{id: int, text: string, correctAnswerIds: list<int>, correctTexts: list<string>}>}|null
+     */
+    public function publicRecap(): ?array
+    {
+        if ($this->status !== QuizStatus::Finished) {
+            return null;
+        }
+
+        $items = $this->recapQuestions()->map(function (Question $question) {
+            $correctAnswers = $question->answers->where('is_correct', true)->values();
+
+            return [
+                'id' => $question->id,
+                'text' => $question->text,
+                'correctAnswerIds' => $correctAnswers->pluck('id')->map(fn ($id) => (int) $id)->all(),
+                'correctTexts' => $correctAnswers->pluck('text')->values()->all(),
+            ];
+        })->values()->all();
+
+        return [
+            'total' => count($items),
+            'questions' => $items,
+        ];
+    }
+
+    /**
+     * @return \Illuminate\Database\Eloquent\Collection<int, Question>
+     */
+    protected function recapQuestions()
+    {
+        return $this->questions()
+            ->with(['answers' => fn ($q) => $q->orderBy('order')])
+            ->orderBy('order')
+            ->get();
     }
 }

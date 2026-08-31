@@ -35,7 +35,11 @@ class DisplayController extends Controller
      *     total: int,
      *     joinUrl: string,
      *     qrSvg: string,
-     *     participantCount: int
+     *     participantCount: int,
+     *     answerClosesAt: string|null,
+     *     answerDurationSeconds: int,
+     *     correctAnswerIds: list<int>,
+     *     recap: array{total: int, questions: list<array{id: int, text: string, correctAnswerIds: list<int>, correctTexts: list<string>}>}|null
      * }|null
      */
     protected function quizPayload(mixed $displayable): ?array
@@ -69,6 +73,10 @@ class DisplayController extends Controller
             'joinUrl' => $displayable->joinUrl(),
             'qrSvg' => $questions->isEmpty() ? '' : $displayable->joinQrSvg(),
             'participantCount' => $displayable->participants()->count(),
+            'answerClosesAt' => $displayable->answerClosesAt()?->toIso8601String(),
+            'answerDurationSeconds' => Quiz::ANSWER_DURATION_SECONDS,
+            'correctAnswerIds' => $displayable->revealedCorrectAnswerIds(),
+            'recap' => $displayable->publicRecap(),
         ];
     }
 }

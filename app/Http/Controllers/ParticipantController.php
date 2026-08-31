@@ -116,6 +116,10 @@ class ParticipantController extends Controller
             'question' => $quiz->publicQuestionPayload($currentQuestion),
             'hasAnswered' => $hasAnswered,
             'selectedAnswerId' => $selectedAnswerId,
+            'correctAnswerIds' => $quiz->revealedCorrectAnswerIds($currentQuestion),
+            'answerClosesAt' => $quiz->answerClosesAt()?->toIso8601String(),
+            'answerDurationSeconds' => Quiz::ANSWER_DURATION_SECONDS,
+            'recap' => $quiz->participantRecap($participant),
             'submitUrl' => route('quiz.answers.store', ['uuid' => $quiz->uuid]),
         ]);
     }
@@ -140,6 +144,12 @@ class ParticipantController extends Controller
         if (! $currentQuestion) {
             throw ValidationException::withMessages([
                 'answer_id' => 'Aucune question en cours.',
+            ]);
+        }
+
+        if (! $quiz->isAnswerWindowOpen()) {
+            throw ValidationException::withMessages([
+                'answer_id' => 'Le temps est écoulé.',
             ]);
         }
 

@@ -90,6 +90,7 @@ test('a participant can submit an answer for the current question', function () 
     $quiz->update([
         'status' => QuizStatus::Live,
         'current_question_index' => 0,
+        'question_started_at' => now(),
     ]);
 
     $participant = Participant::factory()->for($quiz)->create(['nickname' => 'Alex']);
@@ -114,6 +115,7 @@ test('a participant cannot answer a question that is not current', function () {
     $quiz->update([
         'status' => QuizStatus::Live,
         'current_question_index' => 0,
+        'question_started_at' => now(),
     ]);
 
     $participant = Participant::factory()->for($quiz)->create(['nickname' => 'Alex']);
@@ -134,6 +136,7 @@ test('a participant cannot answer the same question twice', function () {
     $quiz->update([
         'status' => QuizStatus::Live,
         'current_question_index' => 0,
+        'question_started_at' => now(),
     ]);
 
     $participant = Participant::factory()->for($quiz)->create(['nickname' => 'Alex']);
@@ -214,7 +217,8 @@ test('the owner can start the quiz from the waiting room', function () {
         ->assertRedirect();
 
     expect($quiz->fresh()->status)->toBe(QuizStatus::Live)
-        ->and($quiz->fresh()->current_question_index)->toBe(0);
+        ->and($quiz->fresh()->current_question_index)->toBe(0)
+        ->and($quiz->fresh()->question_started_at)->not->toBeNull();
 });
 
 test('entering a quiz uuid redirects to the join page', function () {
@@ -223,4 +227,162 @@ test('entering a quiz uuid redirects to the join page', function () {
     $this->post(route('quiz.enter.submit'), [
         'uuid' => $quiz->uuid,
     ])->assertRedirect(route('quiz.join', $quiz->uuid));
+});
+
+test('a participant cannot answer after the time has elapsed', function () {
+    $quiz = makeQuizWithQuestions();
+    $quiz->update([
+        'status' => QuizStatus::Live,
+        'current_question_index' => 0,
+        'question_started_at' => now(),
+    ]);
+
+    $participant = Participant::factory()->for($quiz)->create(['nickname' => 'Alex']);
+    $answer = $quiz->questions->first()->answers->first();
+
+    $this->travel(21)->seconds();
+
+    $this->withCookie(Participant::COOKIE, $participant->token)
+        ->from(route('quiz.participate', $quiz->uuid))
+        ->post(route('quiz.answers.store', $quiz->uuid), [
+            'answer_id' => $answer->id,
+        ])
+        ->assertSessionHasErrors(['answer_id' => 'Le temps est écoulé.']);
+
+    $this->assertDatabaseCount('participant_answers', 0);
+});
+
+test('the participate page includes the answer window closing time', function () {
+    $quiz = makeQuizWithQuestions();
+    $quiz->update([
+        'status' => QuizStatus::Live,
+        'current_question_index' => 0,
+        'question_started_at' => now(),
+    ]);
+    $participant = Participant::factory()->for($quiz)->create(['nickname' => 'Alex']);
+
+    $this->withCookie(Participant::COOKIE, $participant->token)
+        ->get(route('quiz.participate', $quiz->uuid))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Quiz/Participate')
+            ->where('answerDurationSeconds', 20)
+            ->where('correctAnswerIds', [])
+            ->where('recap', null)
+            ->has('answerClosesAt')
+            ->missing('question.answers.0.is_correct')
+        );
+});
+
+test('the participate page reveals the correct answers after the timer', function () {
+    $quiz = makeQuizWithQuestions();
+    $quiz->update([
+        'status' => QuizStatus::Live,
+        'current_question_index' => 0,
+        'question_started_at' => now(),
+    ]);
+    $participant = Participant::factory()->for($quiz)->create(['nickname' => 'Alex']);
+    $correctId = $quiz->questions->first()->answers->firstWhere('is_correct', true)->id;
+
+    $this->travel(21)->seconds();
+
+    $this->withCookie(Participant::COOKIE, $participant->token)
+        ->get(route('quiz.participate', $quiz->uuid))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Quiz/Participate')
+            ->where('correctAnswerIds', [$correctId])
+            ->missing('question.answers.0.is_correct')
+        );
+});
+
+test('advancing to the next question restarts the answer window', function () {
+    $this->freezeTime();
+    $owner = User::factory()->create();
+    $quiz = makeQuizWithQuestions($owner);
+
+    $this->actingAs($owner)->post(route('quiz.play.advance', $quiz->uuid));
+    $firstStart = $quiz->fresh()->question_started_at;
+
+    $this->travel(5)->seconds();
+
+    $this->actingAs($owner)->post(route('quiz.play.advance', $quiz->uuid));
+
+    $fresh = $quiz->fresh();
+
+    expect($fresh->current_question_index)->toBe(1)
+        ->and($fresh->question_started_at?->toDateTimeString())->toBe(now()->toDateTimeString())
+        ->and($fresh->question_started_at?->equalTo($firstStart))->toBeFalse();
+});
+
+test('finishing or resetting a quiz clears the answer window', function () {
+    $owner = User::factory()->create();
+    $quiz = makeQuizWithQuestions($owner, 1);
+
+    $this->actingAs($owner)->post(route('quiz.play.advance', $quiz->uuid));
+    expect($quiz->fresh()->question_started_at)->not->toBeNull();
+
+    $this->actingAs($owner)->post(route('quiz.play.advance', $quiz->uuid));
+    expect($quiz->fresh()->status)->toBe(QuizStatus::Finished)
+        ->and($quiz->fresh()->question_started_at)->toBeNull();
+
+    $this->actingAs($owner)->post(route('quiz.play.reset', $quiz->uuid));
+    expect($quiz->fresh()->status)->toBe(QuizStatus::Waiting)
+        ->and($quiz->fresh()->question_started_at)->toBeNull();
+});
+
+test('the participate page has no recap while the quiz is live', function () {
+    $quiz = makeQuizWithQuestions();
+    $quiz->update([
+        'status' => QuizStatus::Live,
+        'current_question_index' => 0,
+        'question_started_at' => now(),
+    ]);
+    $participant = Participant::factory()->for($quiz)->create(['nickname' => 'Alex']);
+
+    $this->withCookie(Participant::COOKIE, $participant->token)
+        ->get(route('quiz.participate', $quiz->uuid))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Quiz/Participate')
+            ->where('recap', null)
+        );
+});
+
+test('the participate page shows a recap when the quiz is finished', function () {
+    $quiz = makeQuizWithQuestions();
+    $quiz->update([
+        'status' => QuizStatus::Finished,
+        'current_question_index' => 1,
+        'question_started_at' => null,
+    ]);
+    $participant = Participant::factory()->for($quiz)->create(['nickname' => 'Alex']);
+    $firstQuestion = $quiz->questions->first();
+    $secondQuestion = $quiz->questions->last();
+    $correct = $firstQuestion->answers->firstWhere('is_correct', true);
+    $wrong = $secondQuestion->answers->firstWhere('is_correct', false);
+
+    $participant->answers()->create([
+        'question_id' => $firstQuestion->id,
+        'answer_id' => $correct->id,
+    ]);
+    $participant->answers()->create([
+        'question_id' => $secondQuestion->id,
+        'answer_id' => $wrong->id,
+    ]);
+
+    $this->withCookie(Participant::COOKIE, $participant->token)
+        ->get(route('quiz.participate', $quiz->uuid))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Quiz/Participate')
+            ->where('recap.score', 1)
+            ->where('recap.total', 2)
+            ->where('recap.questions.0.isCorrect', true)
+            ->where('recap.questions.0.selectedAnswerId', $correct->id)
+            ->where('recap.questions.0.selectedText', $correct->text)
+            ->where('recap.questions.1.isCorrect', false)
+            ->where('recap.questions.1.selectedText', $wrong->text)
+            ->has('recap.questions.0.correctTexts')
+        );
 });

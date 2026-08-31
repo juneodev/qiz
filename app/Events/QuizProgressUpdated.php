@@ -22,6 +22,8 @@ class QuizProgressUpdated implements ShouldBroadcastNow
 
     public string $status;
 
+    public ?string $answerClosesAt;
+
     public string $type = 'QuizProgressUpdated';
 
     public string $action;
@@ -36,6 +38,7 @@ class QuizProgressUpdated implements ShouldBroadcastNow
         int $total,
         string $action = 'progress',
         string $status = 'waiting',
+        ?string $answerClosesAt = null,
     ) {
         $this->uuid = $uuid;
         $this->currentIndex = $currentIndex;
@@ -43,6 +46,7 @@ class QuizProgressUpdated implements ShouldBroadcastNow
         $this->total = $total;
         $this->action = $action;
         $this->status = $status;
+        $this->answerClosesAt = $answerClosesAt;
     }
 
     /**
