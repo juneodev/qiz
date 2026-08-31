@@ -48,11 +48,16 @@ type PageProps = {
   answerClosesAt: string | null
   answerDurationSeconds: number
   recap: Recap | null
+  score: { current: number; total: number }
   submitUrl: string
 }
 
 const page = usePage<{ props: PageProps }>()
 const props = computed(() => page.props as unknown as PageProps)
+
+const avatarUrl = computed(
+  () => `https://api.dicebear.com/10.x/glyphs/svg?seed=${encodeURIComponent(String(props.value.participant.id))}`,
+)
 
 const letters = ['A', 'B', 'C', 'D', 'E', 'F']
 const pusherStatus = ref('')
@@ -153,10 +158,25 @@ onUnmounted(() => {
 <template>
   <div class="min-h-dvh bg-[#102846] text-white">
     <div class="mx-auto max-w-3xl px-6 py-10">
-      <div class="mb-6 flex items-center justify-between text-sm text-white/80">
-        <div>{{ props.quiz.title }}</div>
-        <div>Connecté en tant que <span class="font-semibold text-white">{{ props.participant.nickname }}</span></div>
-      </div>
+      <header class="mb-6 flex items-center justify-between gap-4">
+        <div class="flex min-w-0 items-center gap-3">
+          <img
+            :src="avatarUrl"
+            :alt="props.participant.nickname"
+            class="size-10 shrink-0 rounded-full bg-white/10 ring-2 ring-white/20"
+          />
+          <div class="min-w-0">
+            <div class="truncate font-semibold text-white">{{ props.participant.nickname }}</div>
+            <div class="truncate text-sm text-white/70">{{ props.quiz.title }}</div>
+          </div>
+        </div>
+        <div class="shrink-0 text-right">
+          <div class="text-xs uppercase tracking-wide text-white/60">Score</div>
+          <div class="text-2xl font-semibold tabular-nums leading-none">
+            {{ props.score.current }} / {{ props.score.total }}
+          </div>
+        </div>
+      </header>
 
       <div v-if="pusherStatus" class="mb-4 text-center text-xs text-amber-200/80">{{ pusherStatus }}</div>
 
