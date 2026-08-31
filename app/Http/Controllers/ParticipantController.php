@@ -120,6 +120,7 @@ class ParticipantController extends Controller
             'answerClosesAt' => $quiz->answerClosesAt()?->toIso8601String(),
             'answerDurationSeconds' => Quiz::ANSWER_DURATION_SECONDS,
             'recap' => $quiz->participantRecap($participant),
+            'score' => $quiz->participantScore($participant),
             'submitUrl' => route('quiz.answers.store', ['uuid' => $quiz->uuid]),
         ]);
     }

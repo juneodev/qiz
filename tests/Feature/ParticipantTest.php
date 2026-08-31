@@ -346,6 +346,91 @@ test('the participate page has no recap while the quiz is live', function () {
         ->assertInertia(fn (Assert $page) => $page
             ->component('Quiz/Participate')
             ->where('recap', null)
+            ->where('score.current', 0)
+            ->where('score.total', 2)
+        );
+});
+
+test('the participate page score is zero while the quiz is waiting', function () {
+    $quiz = makeQuizWithQuestions();
+    $participant = Participant::factory()->for($quiz)->create(['nickname' => 'Alex']);
+
+    $this->withCookie(Participant::COOKIE, $participant->token)
+        ->get(route('quiz.participate', $quiz->uuid))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Quiz/Participate')
+            ->where('score.current', 0)
+            ->where('score.total', 2)
+        );
+});
+
+test('the participate page scores settled questions without spoiling the current one', function () {
+    $quiz = makeQuizWithQuestions();
+    $quiz->update([
+        'status' => QuizStatus::Live,
+        'current_question_index' => 1,
+        'question_started_at' => now(),
+    ]);
+    $participant = Participant::factory()->for($quiz)->create(['nickname' => 'Alex']);
+    $firstQuestion = $quiz->questions->first();
+    $secondQuestion = $quiz->questions->last();
+    $correct = $firstQuestion->answers->firstWhere('is_correct', true);
+    $secondCorrect = $secondQuestion->answers->firstWhere('is_correct', true);
+
+    $participant->answers()->create([
+        'question_id' => $firstQuestion->id,
+        'answer_id' => $correct->id,
+    ]);
+    $participant->answers()->create([
+        'question_id' => $secondQuestion->id,
+        'answer_id' => $secondCorrect->id,
+    ]);
+
+    $this->withCookie(Participant::COOKIE, $participant->token)
+        ->get(route('quiz.participate', $quiz->uuid))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Quiz/Participate')
+            ->where('score.current', 1)
+            ->where('score.total', 2)
+            ->where('recap', null)
+        );
+});
+
+test('the participate page does not increment score until the current question is revealed', function () {
+    $quiz = makeQuizWithQuestions();
+    $quiz->update([
+        'status' => QuizStatus::Live,
+        'current_question_index' => 0,
+        'question_started_at' => now(),
+    ]);
+    $participant = Participant::factory()->for($quiz)->create(['nickname' => 'Alex']);
+    $correct = $quiz->questions->first()->answers->firstWhere('is_correct', true);
+
+    $participant->answers()->create([
+        'question_id' => $quiz->questions->first()->id,
+        'answer_id' => $correct->id,
+    ]);
+
+    $this->withCookie(Participant::COOKIE, $participant->token)
+        ->get(route('quiz.participate', $quiz->uuid))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Quiz/Participate')
+            ->where('score.current', 0)
+            ->where('score.total', 2)
+        );
+
+    $this->travel(21)->seconds();
+
+    $this->withCookie(Participant::COOKIE, $participant->token)
+        ->get(route('quiz.participate', $quiz->uuid))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Quiz/Participate')
+            ->where('score.current', 1)
+            ->where('score.total', 2)
         );
 });
 
@@ -378,6 +463,8 @@ test('the participate page shows a recap when the quiz is finished', function ()
             ->component('Quiz/Participate')
             ->where('recap.score', 1)
             ->where('recap.total', 2)
+            ->where('score.current', 1)
+            ->where('score.total', 2)
             ->where('recap.questions.0.isCorrect', true)
             ->where('recap.questions.0.selectedAnswerId', $correct->id)
             ->where('recap.questions.0.selectedText', $correct->text)

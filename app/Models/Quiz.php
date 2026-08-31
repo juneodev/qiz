@@ -171,6 +171,51 @@ class Quiz extends Model
     }
 
     /**
+     * Running score for the participant header. Only settled questions count, so
+     * answering the current question does not reveal whether it was correct.
+     *
+     * @return array{current: int, total: int}
+     */
+    public function participantScore(Participant $participant): array
+    {
+        $questions = $this->recapQuestions();
+        $total = $questions->count();
+
+        if ($this->status === QuizStatus::Waiting || $total === 0) {
+            return ['current' => 0, 'total' => $total];
+        }
+
+        $settledCount = match ($this->status) {
+            QuizStatus::Waiting => 0,
+            QuizStatus::Finished => $total,
+            QuizStatus::Live => $this->current_question_index + ($this->isAnswerWindowOpen() ? 0 : 1),
+        };
+
+        $answersByQuestionId = $participant->answers()
+            ->get(['question_id', 'answer_id'])
+            ->keyBy('question_id');
+
+        $current = $questions
+            ->take(max(0, min($total, $settledCount)))
+            ->filter(function (Question $question) use ($answersByQuestionId) {
+                $correctIds = $question->answers
+                    ->where('is_correct', true)
+                    ->pluck('id')
+                    ->map(fn ($id) => (int) $id)
+                    ->all();
+                $selectedId = $answersByQuestionId->get($question->id)?->answer_id;
+
+                return $selectedId !== null && in_array((int) $selectedId, $correctIds, true);
+            })
+            ->count();
+
+        return [
+            'current' => $current,
+            'total' => $total,
+        ];
+    }
+
+    /**
      * @return array{score: int, total: int, questions: list<array{id: int, text: string, selectedAnswerId: int|null, selectedText: string|null, correctAnswerIds: list<int>, correctTexts: list<string>, isCorrect: bool}>}|null
      */
     public function participantRecap(Participant $participant): ?array
