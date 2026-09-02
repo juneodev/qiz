@@ -131,7 +131,7 @@ test('a participant cannot answer a question that is not current', function () {
     $this->assertDatabaseCount('participant_answers', 0);
 });
 
-test('a participant cannot answer the same question twice', function () {
+test('submitting the same answer twice is idempotent', function () {
     $quiz = makeQuizWithQuestions();
     $quiz->update([
         'status' => QuizStatus::Live,
@@ -153,9 +153,162 @@ test('a participant cannot answer the same question twice', function () {
         ->post(route('quiz.answers.store', $quiz->uuid), [
             'answer_id' => $answer->id,
         ])
-        ->assertSessionHasErrors('answer_id');
+        ->assertRedirect();
 
     $this->assertDatabaseCount('participant_answers', 1);
+});
+
+test('a participant cannot change their answer', function () {
+    $quiz = makeQuizWithQuestions();
+    $quiz->update([
+        'status' => QuizStatus::Live,
+        'current_question_index' => 0,
+        'question_started_at' => now(),
+    ]);
+
+    $participant = Participant::factory()->for($quiz)->create(['nickname' => 'Alex']);
+    $answers = $quiz->questions->first()->answers;
+    $first = $answers->first();
+    $second = $answers->last();
+
+    $this->withCookie(Participant::COOKIE, $participant->token)
+        ->post(route('quiz.answers.store', $quiz->uuid), [
+            'answer_id' => $first->id,
+        ])
+        ->assertRedirect();
+
+    $this->withCookie(Participant::COOKIE, $participant->token)
+        ->from(route('quiz.participate', $quiz->uuid))
+        ->post(route('quiz.answers.store', $quiz->uuid), [
+            'answer_id' => $second->id,
+        ])
+        ->assertSessionHasErrors('answer_id');
+
+    $this->assertDatabaseHas('participant_answers', [
+        'participant_id' => $participant->id,
+        'answer_id' => $first->id,
+    ]);
+    $this->assertDatabaseCount('participant_answers', 1);
+});
+
+test('a participant can submit an answer as json', function () {
+    $quiz = makeQuizWithQuestions();
+    $quiz->update([
+        'status' => QuizStatus::Live,
+        'current_question_index' => 0,
+        'question_started_at' => now(),
+    ]);
+
+    $participant = Participant::factory()->for($quiz)->create(['nickname' => 'Alex']);
+    $question = $quiz->questions->first();
+    $answer = $question->answers->first();
+
+    $this->withCredentials()
+        ->withCookie(Participant::COOKIE, $participant->token)
+        ->postJson(route('quiz.answers.store', $quiz->uuid), [
+            'answer_id' => $answer->id,
+            'question_id' => $question->id,
+        ])
+        ->assertOk()
+        ->assertJson([
+            'ok' => true,
+            'answer_id' => $answer->id,
+        ]);
+
+    $this->assertDatabaseHas('participant_answers', [
+        'participant_id' => $participant->id,
+        'question_id' => $question->id,
+        'answer_id' => $answer->id,
+    ]);
+});
+
+test('submitting the same answer twice as json is idempotent', function () {
+    $quiz = makeQuizWithQuestions();
+    $quiz->update([
+        'status' => QuizStatus::Live,
+        'current_question_index' => 0,
+        'question_started_at' => now(),
+    ]);
+
+    $participant = Participant::factory()->for($quiz)->create(['nickname' => 'Alex']);
+    $question = $quiz->questions->first();
+    $answer = $question->answers->first();
+    $payload = [
+        'answer_id' => $answer->id,
+        'question_id' => $question->id,
+    ];
+
+    $this->withCredentials()
+        ->withCookie(Participant::COOKIE, $participant->token)
+        ->postJson(route('quiz.answers.store', $quiz->uuid), $payload)
+        ->assertOk();
+
+    $this->withCredentials()
+        ->withCookie(Participant::COOKIE, $participant->token)
+        ->postJson(route('quiz.answers.store', $quiz->uuid), $payload)
+        ->assertOk()
+        ->assertJson([
+            'ok' => true,
+            'answer_id' => $answer->id,
+        ]);
+
+    $this->assertDatabaseCount('participant_answers', 1);
+});
+
+test('submitting a different answer as json after answering returns 422', function () {
+    $quiz = makeQuizWithQuestions();
+    $quiz->update([
+        'status' => QuizStatus::Live,
+        'current_question_index' => 0,
+        'question_started_at' => now(),
+    ]);
+
+    $participant = Participant::factory()->for($quiz)->create(['nickname' => 'Alex']);
+    $question = $quiz->questions->first();
+    $first = $question->answers->first();
+    $second = $question->answers->last();
+
+    $this->withCredentials()
+        ->withCookie(Participant::COOKIE, $participant->token)
+        ->postJson(route('quiz.answers.store', $quiz->uuid), [
+            'answer_id' => $first->id,
+        ])
+        ->assertOk();
+
+    $this->withCredentials()
+        ->withCookie(Participant::COOKIE, $participant->token)
+        ->postJson(route('quiz.answers.store', $quiz->uuid), [
+            'answer_id' => $second->id,
+        ])
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors('answer_id');
+
+    $this->assertDatabaseCount('participant_answers', 1);
+});
+
+test('json submit after the time has elapsed returns 422', function () {
+    $quiz = makeQuizWithQuestions();
+    $quiz->update([
+        'status' => QuizStatus::Live,
+        'current_question_index' => 0,
+        'question_started_at' => now(),
+    ]);
+
+    $participant = Participant::factory()->for($quiz)->create(['nickname' => 'Alex']);
+    $answer = $quiz->questions->first()->answers->first();
+
+    $this->travel(21)->seconds();
+
+    $this->withCredentials()
+        ->withCookie(Participant::COOKIE, $participant->token)
+        ->postJson(route('quiz.answers.store', $quiz->uuid), [
+            'answer_id' => $answer->id,
+        ])
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors('answer_id')
+        ->assertJsonPath('errors.answer_id.0', 'Le temps est écoulé.');
+
+    $this->assertDatabaseCount('participant_answers', 0);
 });
 
 test('a participant cannot answer while the quiz is waiting', function () {

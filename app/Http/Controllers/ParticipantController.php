@@ -7,6 +7,8 @@ use App\Events\ParticipantJoined;
 use App\Models\Answer;
 use App\Models\Participant;
 use App\Models\Quiz;
+use Illuminate\Database\UniqueConstraintViolationException;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cookie;
@@ -125,12 +127,16 @@ class ParticipantController extends Controller
         ]);
     }
 
-    public function storeAnswer(Request $request, string $uuid): RedirectResponse
+    public function storeAnswer(Request $request, string $uuid): RedirectResponse|JsonResponse
     {
         $quiz = $this->findQuiz($uuid);
         $participant = $this->participantFromRequest($request, $quiz);
 
         if (! $participant) {
+            if ($request->wantsJson()) {
+                return response()->json(['message' => 'Unauthenticated.'], 401);
+            }
+
             return redirect()->route('quiz.join', ['uuid' => $quiz->uuid]);
         }
 
@@ -166,20 +172,50 @@ class ParticipantController extends Controller
             ]);
         }
 
-        $alreadyAnswered = $participant->answers()
+        $existing = $participant->answers()
             ->where('question_id', $currentQuestion->id)
-            ->exists();
+            ->first();
 
-        if ($alreadyAnswered) {
+        if ($existing) {
+            if ($existing->answer_id === $answer->id) {
+                return $this->answerStoredResponse($request, $answer->id);
+            }
+
             throw ValidationException::withMessages([
                 'answer_id' => 'Vous avez déjà répondu à cette question.',
             ]);
         }
 
-        $participant->answers()->create([
-            'question_id' => $currentQuestion->id,
-            'answer_id' => $answer->id,
-        ]);
+        try {
+            $participant->answers()->create([
+                'question_id' => $currentQuestion->id,
+                'answer_id' => $answer->id,
+            ]);
+        } catch (UniqueConstraintViolationException) {
+            $existing = $participant->answers()
+                ->where('question_id', $currentQuestion->id)
+                ->first();
+
+            if ($existing && $existing->answer_id === $answer->id) {
+                return $this->answerStoredResponse($request, $answer->id);
+            }
+
+            throw ValidationException::withMessages([
+                'answer_id' => 'Vous avez déjà répondu à cette question.',
+            ]);
+        }
+
+        return $this->answerStoredResponse($request, $answer->id);
+    }
+
+    protected function answerStoredResponse(Request $request, int $answerId): RedirectResponse|JsonResponse
+    {
+        if ($request->wantsJson()) {
+            return response()->json([
+                'ok' => true,
+                'answer_id' => $answerId,
+            ]);
+        }
 
         return back();
     }
