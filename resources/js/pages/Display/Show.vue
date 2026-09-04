@@ -137,6 +137,7 @@ onMounted(async () => {
         answerClosesAt.value = data?.answerClosesAt ?? null
         correctAnswerIds.value = []
         revealReloadRequested.value = false
+        participantCount.value = 0
       })
       quizChannel.bind('participant-joined', (data: { count?: number }) => {
         if (typeof data?.count === 'number') participantCount.value = data.count

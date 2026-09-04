@@ -101,6 +101,7 @@ onMounted(async () => {
     channel.bind('reset', (data: { status?: Quiz['status']; currentIndex?: number }) => {
       status.value = data?.status || 'waiting'
       currentIndex.value = typeof data?.currentIndex === 'number' ? data.currentIndex : 0
+      liveParticipants.value = []
       pusherStatus.value = 'Signal: réinitialisation envoyée'
     })
     channel.bind('participant-joined', (data: { nickname?: string; count?: number }) => {

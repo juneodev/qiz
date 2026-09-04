@@ -484,6 +484,41 @@ test('finishing or resetting a quiz clears the answer window', function () {
         ->and($quiz->fresh()->question_started_at)->toBeNull();
 });
 
+test('resetting a quiz deletes its participants and their answers', function () {
+    $owner = User::factory()->create();
+    $quiz = makeQuizWithQuestions($owner);
+    $quiz->update([
+        'status' => QuizStatus::Live,
+        'current_question_index' => 0,
+        'question_started_at' => now(),
+    ]);
+
+    $participant = Participant::factory()->for($quiz)->create(['nickname' => 'Alex']);
+    $question = $quiz->questions->first();
+    $answer = $question->answers->first();
+
+    $this->withCookie(Participant::COOKIE, $participant->token)
+        ->post(route('quiz.answers.store', $quiz->uuid), [
+            'answer_id' => $answer->id,
+        ])
+        ->assertRedirect();
+
+    $this->assertDatabaseHas('participants', ['id' => $participant->id]);
+    $this->assertDatabaseHas('participant_answers', [
+        'participant_id' => $participant->id,
+    ]);
+
+    $this->actingAs($owner)
+        ->post(route('quiz.play.reset', $quiz->uuid))
+        ->assertRedirect();
+
+    expect($quiz->fresh()->status)->toBe(QuizStatus::Waiting)
+        ->and($quiz->participants()->count())->toBe(0);
+
+    $this->assertDatabaseMissing('participants', ['id' => $participant->id]);
+    $this->assertDatabaseCount('participant_answers', 0);
+});
+
 test('the participate page has no recap while the quiz is live', function () {
     $quiz = makeQuizWithQuestions();
     $quiz->update([

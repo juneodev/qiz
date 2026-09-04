@@ -4,7 +4,6 @@ namespace App\Http\Controllers;
 
 use App\Enums\QuizStatus;
 use App\Events\QuizProgressUpdated;
-use App\Models\ParticipantAnswer;
 use App\Models\Quiz;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -48,9 +47,7 @@ class PlayQuizController extends Controller
         $quiz->question_started_at = null;
         $quiz->save();
 
-        ParticipantAnswer::query()
-            ->whereIn('participant_id', $quiz->participants()->select('id'))
-            ->delete();
+        $quiz->participants()->delete();
 
         $this->broadcastProgress($quiz, $quiz->questions()->count(), 'reset');
 
