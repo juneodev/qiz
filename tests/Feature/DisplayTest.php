@@ -230,6 +230,10 @@ test('the quiz console lists attached displays', function () {
     $display->displayable()->associate($quiz);
     $display->save();
 
+    $question = Question::factory()->for($quiz)->create(['text' => 'Capitale de la France ?', 'order' => 1]);
+    Answer::factory()->for($question)->create(['text' => 'Paris', 'order' => 1, 'is_correct' => true]);
+    Answer::factory()->for($question)->create(['text' => 'Lyon', 'order' => 2, 'is_correct' => false]);
+
     $this->actingAs($owner)
         ->get(route('quizzes.console', $quiz))
         ->assertOk()
@@ -237,5 +241,115 @@ test('the quiz console lists attached displays', function () {
             ->component('Quizzes/Console')
             ->has('displays', 1)
             ->where('displays.0.name', 'Salle principale')
+            ->has('availableDisplays', 1)
+            ->where('availableDisplays.0.name', 'Salle principale')
+            ->has('questions', 1)
+            ->where('questions.0.text', 'Capitale de la France ?')
+            ->where('questions.0.answers.0.is_correct', true)
+            ->where('questions.0.answers.1.is_correct', false)
         );
+});
+
+test('the quiz console lists participants with scores', function () {
+    $owner = User::factory()->create();
+    $quiz = makeDisplayQuiz($owner, 2);
+    $quiz->update([
+        'status' => QuizStatus::Finished,
+        'current_question_index' => 1,
+    ]);
+
+    $leader = \App\Models\Participant::factory()->for($quiz)->create(['nickname' => 'Alex']);
+    $other = \App\Models\Participant::factory()->for($quiz)->create(['nickname' => 'Sam']);
+
+    $firstCorrect = $quiz->questions->first()->answers->firstWhere('is_correct', true);
+    $secondCorrect = $quiz->questions->last()->answers->firstWhere('is_correct', true);
+    $secondWrong = $quiz->questions->last()->answers->firstWhere('is_correct', false);
+
+    $leader->answers()->create([
+        'question_id' => $quiz->questions->first()->id,
+        'answer_id' => $firstCorrect->id,
+    ]);
+    $leader->answers()->create([
+        'question_id' => $quiz->questions->last()->id,
+        'answer_id' => $secondCorrect->id,
+    ]);
+    $other->answers()->create([
+        'question_id' => $quiz->questions->first()->id,
+        'answer_id' => $firstCorrect->id,
+    ]);
+    $other->answers()->create([
+        'question_id' => $quiz->questions->last()->id,
+        'answer_id' => $secondWrong->id,
+    ]);
+
+    $this->actingAs($owner)
+        ->get(route('quizzes.console', $quiz))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Quizzes/Console')
+            ->has('participants', 2)
+            ->where('participants.0.nickname', 'Alex')
+            ->where('participants.0.score', 2)
+            ->where('participants.0.score_total', 2)
+            ->where('participants.1.nickname', 'Sam')
+            ->where('participants.1.score', 1)
+        );
+});
+
+test('the owner can attach a display from the quiz console', function () {
+    Event::fake([DisplayAttachmentUpdated::class]);
+
+    $owner = User::factory()->create();
+    $quiz = Quiz::factory()->for($owner)->create();
+    $display = Display::factory()->for($owner)->create(['name' => 'Salle 1']);
+
+    $this->actingAs($owner)
+        ->from(route('quizzes.console', $quiz))
+        ->put(route('quizzes.display', $quiz), [
+            'display_id' => $display->id,
+        ])
+        ->assertRedirect(route('quizzes.console', $quiz));
+
+    expect($display->fresh()->displayable_id)->toBe($quiz->id)
+        ->and($display->fresh()->displayable_type)->toBe(Quiz::class);
+
+    Event::assertDispatched(DisplayAttachmentUpdated::class);
+});
+
+test('the owner can detach a display from the quiz console', function () {
+    Event::fake([DisplayAttachmentUpdated::class]);
+
+    $owner = User::factory()->create();
+    $quiz = Quiz::factory()->for($owner)->create();
+    $display = Display::factory()->for($owner)->create(['name' => 'Salle 1']);
+    $display->displayable()->associate($quiz);
+    $display->save();
+
+    $this->actingAs($owner)
+        ->from(route('quizzes.console', $quiz))
+        ->put(route('quizzes.display', $quiz), [
+            'display_id' => null,
+        ])
+        ->assertRedirect(route('quizzes.console', $quiz));
+
+    expect($display->fresh()->displayable_id)->toBeNull();
+
+    Event::assertDispatched(DisplayAttachmentUpdated::class);
+});
+
+test('a display belonging to another user cannot be attached from the console', function () {
+    $owner = User::factory()->create();
+    $other = User::factory()->create();
+    $quiz = Quiz::factory()->for($owner)->create();
+    $foreignDisplay = Display::factory()->for($other)->create();
+
+    $this->actingAs($owner)
+        ->from(route('quizzes.console', $quiz))
+        ->put(route('quizzes.display', $quiz), [
+            'display_id' => $foreignDisplay->id,
+        ])
+        ->assertRedirect(route('quizzes.console', $quiz))
+        ->assertSessionHasErrors('display_id');
+
+    expect($foreignDisplay->fresh()->displayable_id)->toBeNull();
 });

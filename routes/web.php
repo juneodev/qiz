@@ -6,6 +6,7 @@ use App\Http\Controllers\ParticipantController;
 use App\Http\Controllers\PlayQuizController;
 use App\Http\Controllers\QuizParticipantsController;
 use App\Models\Answer;
+use App\Models\Display;
 use App\Models\Question;
 use App\Models\Quiz;
 use Illuminate\Http\Request;
@@ -164,30 +165,54 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
         $quizArray = $quiz->only(['id', 'uuid', 'title']);
         $quizArray['join_url'] = $quiz->joinUrl();
-        $quizArray['qr_svg'] = $quiz->joinQrSvg();
         $quizArray['advance_url'] = route('quiz.play.advance', ['uuid' => $quiz->uuid]);
         $quizArray['reset_url'] = route('quiz.play.reset', ['uuid' => $quiz->uuid]);
         $quizArray['participants_url'] = route('quizzes.participants', ['quiz' => $quiz->id]);
+        $quizArray['attach_display_url'] = route('quizzes.display', ['quiz' => $quiz->id]);
         $quizArray['status'] = $quiz->status->value;
         $quizArray['current_question_index'] = $quiz->current_question_index;
         $quizArray['total_questions'] = $quiz->questions()->count();
 
-        $participants = $quiz->participants()
-            ->orderBy('created_at')
-            ->get(['id', 'nickname', 'created_at'])
-            ->map(fn ($participant) => [
-                'id' => $participant->id,
-                'nickname' => $participant->nickname,
-                'created_at' => $participant->created_at?->toIso8601String(),
+        $questions = $quiz->questions()
+            ->with(['answers' => fn ($q) => $q->orderBy('order')])
+            ->get()
+            ->map(fn (Question $question) => [
+                'id' => $question->id,
+                'text' => $question->text,
+                'order' => $question->order,
+                'answers' => $question->answers->map(fn (Answer $answer) => [
+                    'id' => $answer->id,
+                    'text' => $answer->text,
+                    'order' => $answer->order,
+                    'is_correct' => (bool) $answer->is_correct,
+                ])->values()->all(),
+            ])
+            ->values();
+
+        $participants = $quiz->consoleParticipantsPayload();
+
+        $availableDisplays = auth()->user()
+            ->displays()
+            ->orderBy('name')
+            ->get()
+            ->map(fn (Display $display) => [
+                'id' => $display->id,
+                'name' => $display->name,
+                'url' => $display->url(),
             ])
             ->values();
 
         return Inertia::render('Quizzes/Console', [
             'quiz' => $quizArray,
+            'questions' => $questions,
             'participants' => $participants,
             'displays' => $quiz->attachedDisplaysPayload(),
+            'availableDisplays' => $availableDisplays,
         ]);
     })->name('quizzes.console');
+
+    Route::put('quizzes/{quiz}/display', [DisplaysController::class, 'attachToQuiz'])
+        ->name('quizzes.display');
 
     Route::get('quizzes/{quiz}/participants', [QuizParticipantsController::class, 'index'])
         ->name('quizzes.participants');

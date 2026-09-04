@@ -14,6 +14,7 @@ class ParticipantJoined implements ShouldBroadcastNow
 
     public function __construct(
         public string $uuid,
+        public int $participantId,
         public string $nickname,
         public int $count,
     ) {}

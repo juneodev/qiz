@@ -283,6 +283,67 @@ class Quiz extends Model
     }
 
     /**
+     * Host console roster with running scores.
+     *
+     * @return list<array{id: int, nickname: string, created_at: string|null, score: int, score_total: int}>
+     */
+    public function consoleParticipantsPayload(): array
+    {
+        $questions = $this->recapQuestions();
+        $total = $questions->count();
+
+        $settledCount = match ($this->status) {
+            QuizStatus::Waiting => 0,
+            QuizStatus::Finished => $total,
+            QuizStatus::Live => $this->current_question_index + ($this->isAnswerWindowOpen() ? 0 : 1),
+        };
+        $settledCount = max(0, min($total, $settledCount));
+        $settledQuestions = $questions->take($settledCount);
+
+        $correctByQuestionId = $settledQuestions->mapWithKeys(
+            fn (Question $question) => [
+                $question->id => $question->answers
+                    ->where('is_correct', true)
+                    ->pluck('id')
+                    ->map(fn ($id) => (int) $id)
+                    ->all(),
+            ]
+        );
+
+        return $this->participants()
+            ->with(['answers:id,participant_id,question_id,answer_id'])
+            ->orderBy('created_at')
+            ->get()
+            ->map(function (Participant $participant) use ($total, $settledQuestions, $correctByQuestionId) {
+                $answersByQuestionId = $participant->answers->keyBy('question_id');
+                $score = 0;
+
+                foreach ($settledQuestions as $question) {
+                    $selectedId = $answersByQuestionId->get($question->id)?->answer_id;
+                    $correctIds = $correctByQuestionId[$question->id] ?? [];
+
+                    if ($selectedId !== null && in_array((int) $selectedId, $correctIds, true)) {
+                        $score++;
+                    }
+                }
+
+                return [
+                    'id' => $participant->id,
+                    'nickname' => $participant->nickname,
+                    'created_at' => $participant->created_at?->toIso8601String(),
+                    'score' => $score,
+                    'score_total' => $total,
+                ];
+            })
+            ->sortBy([
+                ['score', 'desc'],
+                ['nickname', 'asc'],
+            ])
+            ->values()
+            ->all();
+    }
+
+    /**
      * @return \Illuminate\Database\Eloquent\Collection<int, Question>
      */
     protected function recapQuestions()

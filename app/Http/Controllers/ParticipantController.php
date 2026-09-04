@@ -71,6 +71,7 @@ class ParticipantController extends Controller
 
         event(new ParticipantJoined(
             $quiz->uuid,
+            $participant->id,
             $participant->nickname,
             $quiz->participants()->count(),
         ));

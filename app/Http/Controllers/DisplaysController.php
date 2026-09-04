@@ -118,6 +118,51 @@ class DisplaysController extends Controller
         return redirect()->route('displays.index');
     }
 
+    public function attachToQuiz(Request $request, Quiz $quiz): RedirectResponse
+    {
+        abort_if($quiz->user_id !== $request->user()?->id, 404);
+
+        $validated = $request->validate([
+            'display_id' => [
+                'nullable',
+                'integer',
+                Rule::exists('displays', 'id')->where('user_id', $request->user()->id),
+            ],
+        ]);
+
+        $selectedId = $validated['display_id'] ?? null;
+
+        foreach ($quiz->displays as $attached) {
+            if ((int) $attached->id === (int) $selectedId) {
+                continue;
+            }
+
+            $attached->displayable()->dissociate();
+            $attached->save();
+
+            event(new DisplayAttachmentUpdated($attached->uuid, 'detached'));
+        }
+
+        if ($selectedId) {
+            $display = Display::query()
+                ->where('id', $selectedId)
+                ->where('user_id', $request->user()->id)
+                ->firstOrFail();
+
+            $previousType = $display->displayable_type;
+            $previousId = $display->displayable_id;
+
+            $display->displayable()->associate($quiz);
+            $display->save();
+
+            if ($previousType !== $display->displayable_type || (int) $previousId !== (int) $display->displayable_id) {
+                event(new DisplayAttachmentUpdated($display->uuid, 'attached'));
+            }
+        }
+
+        return back();
+    }
+
     protected function authorizeOwner(Request $request, Display $display): void
     {
         abort_if($display->user_id !== $request->user()?->id, 404);
